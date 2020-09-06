@@ -1,8 +1,13 @@
+extern crate unicode_segmentation;
+
 use std::error::Error;
 use std::fs::File;
 use std::io::{BufRead, Read};
 
-type LineNumber = u16;
+use unicode_segmentation::UnicodeSegmentation;
+
+type LineNumber = u16; // 64K lines
+type FileLocation = usize; // 4G chars
 
 pub struct Lox {
     had_error: bool,
@@ -10,10 +15,10 @@ pub struct Lox {
 
 impl Lox {
     pub fn new() -> Lox {
-        return Lox { had_error: false };
+        Lox { had_error: false }
     }
 
-    pub fn run_file(&self, name: &str) -> Result<(), Box<dyn Error>> {
+    pub fn run_file(&mut self, name: &str) -> Result<(), Box<dyn Error>> {
         let mut contents = String::new();
         File::open(name)?.read_to_string(&mut contents)?;
 
@@ -21,7 +26,7 @@ impl Lox {
         if self.had_error {
             std::process::exit(65);
         } else {
-            return Ok(());
+            Ok(())
         }
     }
 
@@ -35,7 +40,7 @@ impl Lox {
             self.had_error = false;
         }
 
-        return Ok(());
+        Ok(())
     }
 
     pub fn error(&mut self, line: LineNumber, message: &str) {
@@ -43,36 +48,241 @@ impl Lox {
         self.had_error = true;
     }
 
-    fn run(&self, snippet: String) {
-        let scanner = Scanner::new(snippet);
+    fn run(&mut self, snippet: String) {
+        let mut scanner = Scanner::new(snippet);
         let tokens = scanner.scan_tokens(self);
 
         for token in tokens {
-            println!("{}", token);
+            println!("{}", token.to_string());
+        }
+    }
+}
+
+pub enum Literal {
+    LoxString(String),
+    LoxNumber(f64),
+    None,
+}
+
+impl Literal {
+    fn get_number(&self) -> Option<&f64> {
+        if let Literal::LoxNumber(f) = self {
+            Some(f)
+        } else {
+            None
+        }
+    }
+
+    fn get_string(&self) -> Option<&str> {
+        if let Literal::LoxString(s) = self {
+            Some(s)
+        } else {
+            None
+        }
+    }
+
+    fn repr(&self) -> String {
+        match self {
+            Literal::LoxString(s) => format!("Literal(string={})", s),
+            Literal::LoxNumber(n) => format!("Literal(number={})", n),
+            Literal::None => format!("None"),
         }
     }
 }
 
 pub struct Scanner {
-    text: String,
+    graphemes: Vec<String>,
+    start: FileLocation,
+    next: FileLocation,
+    line: LineNumber,
 }
 
 impl Scanner {
-    pub fn scan_tokens(&self, lox: &Lox) -> Vec<String> {
-        let mut tokens = Vec::new();
-        for item in self.text.split(" ") {
-            tokens.push(String::from(item));
+    pub fn new(snippet: String) -> Scanner {
+        Scanner {
+            graphemes: UnicodeSegmentation::graphemes(&snippet[..], true)
+                .map(|grph| String::from(grph))
+                .collect::<Vec<String>>(),
+            start: 0,
+            next: 0,
+            line: 1,
         }
-        return tokens;
     }
 
-    pub fn new(snippet: String) -> Scanner {
-        Scanner { text: snippet }
+    // TODO: remove passing lox in here, make some shared error handler
+    pub fn scan_tokens(&mut self, lox: &mut Lox) -> Vec<Token> {
+        let mut tokens = Vec::new();
+        while !self.is_at_end() {
+            self.start = self.next;
+            match self.scan_token(lox) {
+                Ok(token) => tokens.push(token),
+                Err(()) => (),
+            }
+        }
+
+        tokens.push(Token {
+            token_type: TokenType::Eof,
+            line: self.line,
+            literal: Literal::None,
+            lexeme: "".to_owned(),
+        });
+
+        tokens
+    }
+
+    // TODO: I don't like passing lox in, I'd rather find a better way to
+    // implement what Bob calls separation of the code that reports errors
+    // from the code that handles errors
+    fn scan_token(&mut self, lox: &mut Lox) -> Result<Token, ()> {
+        let c = self.advance();
+        let token = match c {
+            "(" => self.new_token(TokenType::LeftParen),
+            ")" => self.new_token(TokenType::RightParen),
+            "{" => self.new_token(TokenType::LeftBrace),
+            "}" => self.new_token(TokenType::RightBrace),
+            "," => self.new_token(TokenType::Comma),
+            "." => self.new_token(TokenType::Dot),
+            "-" => self.new_token(TokenType::Minus),
+            "+" => self.new_token(TokenType::Plus),
+            ";" => self.new_token(TokenType::Semicolon),
+            "*" => self.new_token(TokenType::Star),
+            "!" => {
+                let token = if self.is_match("=") {
+                    TokenType::BangEqual
+                } else {
+                    TokenType::Bang
+                };
+                self.new_token(token)
+            }
+            "=" => {
+                let token = if self.is_match("=") {
+                    TokenType::EqualEqual
+                } else {
+                    TokenType::Equal
+                };
+                self.new_token(token)
+            }
+            "<" => {
+                let token = if self.is_match("=") {
+                    TokenType::LessEqual
+                } else {
+                    TokenType::Less
+                };
+                self.new_token(token)
+            }
+            ">" => {
+                let token = if self.is_match("=") {
+                    TokenType::GreaterEqual
+                } else {
+                    TokenType::Greater
+                };
+                self.new_token(token)
+            }
+            "/" => {
+                if self.is_match("/") {
+                    loop {
+                        if self.advance() == "\n" {
+                            break;
+                        }
+                    }
+                    self.line += 1;
+                    return Err(()); // No token
+                } else {
+                    self.new_token(TokenType::Slash)
+                }
+            }
+            " " => return Err(()),
+            "\r" => return Err(()),
+            "\t" => return Err(()),
+            "\n" => {
+                self.line += 1;
+                return Err(());
+            }
+            // TODO: remove passing lox in here, make some shared error handler
+            "\"" => self.string(lox),
+            _ => {
+                let message = format!("Unexpected character '{}'", c);
+                lox.error(self.line, &message);
+                return Err(());
+            }
+        };
+
+        Ok(token)
+    }
+
+    fn advance(&mut self) -> &str {
+        let current = &self.graphemes[self.next];
+        self.next += 1;
+        current
+    }
+
+    fn is_at_end(&self) -> bool {
+        self.next >= self.graphemes.len()
+    }
+
+    fn is_match(&mut self, against: &str) -> bool {
+        if self.is_at_end() {
+            return false;
+        };
+        if &self.graphemes[self.next] != against {
+            // is_match doesn't consume characters that don't match, for example
+            // is_match on the character after '=' when it's just an equals sign
+            false
+        } else {
+            self.advance();
+            true
+        }
+    }
+
+    // TODO: remove passing lox in here, make some shared error handler
+    fn string(&mut self, lox: &mut Lox) -> Token {
+        loop {
+            if self.is_at_end() {
+                break;
+            };
+            let c = self.advance();
+            if c == "\"" {
+                break;
+            }
+            if c == "\n" {
+                self.line += 1;
+                break;
+            }
+        }
+
+        if self.is_at_end() {
+            lox.error(self.line, "Unterminated string");
+        }
+
+        let mut lexeme = String::new();
+        for i in self.start + 1..self.next - 1 {
+            lexeme.push_str(&self.graphemes[i]);
+        }
+
+        Token {
+            token_type: TokenType::LoxString,
+            line: self.line,
+            literal: Literal::LoxString(lexeme.clone()), // TODO is this dumb?
+            lexeme: lexeme,
+        }
+    }
+
+    fn new_token(&mut self, token_type: TokenType) -> Token {
+        let mut lexeme = String::new();
+        for i in self.start..self.next {
+            lexeme.push_str(&self.graphemes[i]);
+        }
+        Token {
+            token_type: token_type,
+            line: self.line,
+            literal: Literal::None,
+            lexeme: lexeme,
+        }
     }
 }
 
 #[derive(Debug)]
-enum TokenType {
+pub enum TokenType {
     // Single-character tokens.
     LeftParen,
     RightParen,
@@ -122,18 +332,20 @@ enum TokenType {
     Eof,
 }
 
-struct Token<T: std::fmt::Display> {
+pub struct Token {
     token_type: TokenType,
     lexeme: String,
-    literal: T,
+    literal: Literal,
     line: LineNumber,
 }
 
-impl<T: std::fmt::Display> Token<T> {
-    fn to_string(&self) {
+impl Token {
+    fn to_string(&self) -> String {
         format!(
-            "Token(token_type={:?}, lexeme={}, literal={})",
-            self.token_type, self.lexeme, self.literal
-        );
+            "Token(token_type={:?}, lexeme=\"{}\", literal={})",
+            self.token_type,
+            self.lexeme,
+            self.literal.repr(),
+        )
     }
 }

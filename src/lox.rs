@@ -3,6 +3,7 @@ extern crate unicode_segmentation;
 use std::error::Error;
 use std::fs::File;
 use std::io::{BufRead, Read};
+use std::str::FromStr;
 
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -181,7 +182,7 @@ impl Scanner {
             "/" => {
                 if self.is_match("/") {
                     loop {
-                        if self.advance() == "\n" {
+                        if self.is_at_end() || self.advance() == "\n" {
                             break;
                         }
                     }
@@ -201,9 +202,15 @@ impl Scanner {
             // TODO: remove passing lox in here, make some shared error handler
             "\"" => self.string(lox),
             _ => {
+                // Borrow c again as immutable to avoid reference error
+                let c = self.peek();
+                if self.is_digit(&c) {
+                    self.number(lox)
+                } else {
                 let message = format!("Unexpected character '{}'", c);
                 lox.error(self.line, &message);
                 return Err(());
+            }
             }
         };
 
@@ -216,6 +223,18 @@ impl Scanner {
         current
     }
 
+    fn peek(&self) -> &str {
+        &self.graphemes[self.next]
+    }
+
+    fn peek_next(&self) -> &str {
+        if self.next + 1 >= self.graphemes.len() {
+            "\0"
+        } else {
+            &self.graphemes[self.next + 1]
+        }
+    }
+
     fn is_at_end(&self) -> bool {
         self.next >= self.graphemes.len()
     }
@@ -224,13 +243,20 @@ impl Scanner {
         if self.is_at_end() {
             return false;
         };
-        if &self.graphemes[self.next] != against {
+        if self.peek() != against {
             // is_match doesn't consume characters that don't match, for example
             // is_match on the character after '=' when it's just an equals sign
             false
         } else {
             self.advance();
             true
+        }
+    }
+
+    fn is_digit(&self, c: &str) -> bool {
+        match c {
+            "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" => true,
+            _ => false,
         }
     }
 
@@ -267,17 +293,53 @@ impl Scanner {
         }
     }
 
-    fn new_token(&mut self, token_type: TokenType) -> Token {
-        let mut lexeme = String::new();
-        for i in self.start..self.next {
-            lexeme.push_str(&self.graphemes[i]);
+    fn number(&mut self, _lox: &mut Lox) -> Token {
+        loop {
+            let c = self.peek();
+            if self.is_digit(c) {
+                self.advance();
+            } else {
+                break;
+            }
         }
+
+        if self.peek() == "." && self.is_digit(self.peek_next()) {
+            self.advance();
+            loop {
+                let c = self.peek();
+                if self.is_digit(c) {
+                    self.advance();
+                } else {
+                    break;
+                }
+            }
+        }
+
+        // Panic if we can't parse the thing we already checked was a number
+        let d = f64::from_str(&self.lexeme()).unwrap();
+        Token {
+            token_type: TokenType::Number,
+            line: self.line,
+            literal: Literal::LoxNumber(d),
+            lexeme: self.lexeme(),
+        }
+    }
+
+    fn new_token(&mut self, token_type: TokenType) -> Token {
         Token {
             token_type: token_type,
             line: self.line,
             literal: Literal::None,
-            lexeme: lexeme,
+            lexeme: self.lexeme(),
         }
+    }
+
+    fn lexeme(&self) -> String {
+        let mut lexeme = String::new();
+        for i in self.start..self.next {
+            lexeme.push_str(&self.graphemes[i]);
+        }
+        lexeme
     }
 }
 

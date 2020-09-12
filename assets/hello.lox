@@ -1,2 +1,6 @@
 var message = "hello, world";
 print message;
+
+var number = 10.1;
+
+11.method(); // Method calls on number literals

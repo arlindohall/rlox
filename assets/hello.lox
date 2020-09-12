@@ -3,4 +3,8 @@ print message;
 
 var number = 10.1;
 
+if (number > 12.3 or number < 11) {
+    print number;
+}
+
 11.method(); // Method calls on number literals

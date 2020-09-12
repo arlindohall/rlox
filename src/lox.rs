@@ -1,5 +1,6 @@
 extern crate unicode_segmentation;
 
+use std::collections::HashMap;
 use std::error::Error;
 use std::fs::File;
 use std::io::{BufRead, Read};
@@ -12,11 +13,43 @@ type FileLocation = usize; // 4G chars
 
 pub struct Lox {
     had_error: bool,
+    reserved_words: HashMap<String, TokenType>,
 }
 
 impl Lox {
     pub fn new() -> Lox {
-        Lox { had_error: false }
+        let mut lox = Lox {
+            had_error: false,
+            reserved_words: HashMap::new(),
+        };
+
+        lox.reserved_words.insert("and".to_owned(), TokenType::And);
+        lox.reserved_words
+            .insert("class".to_owned(), TokenType::Class);
+        lox.reserved_words
+            .insert("else".to_owned(), TokenType::Else);
+        lox.reserved_words
+            .insert("false".to_owned(), TokenType::False);
+        lox.reserved_words.insert("for".to_owned(), TokenType::For);
+        lox.reserved_words.insert("fun".to_owned(), TokenType::Fun);
+        lox.reserved_words.insert("if".to_owned(), TokenType::If);
+        lox.reserved_words.insert("nil".to_owned(), TokenType::Nil);
+        lox.reserved_words.insert("or".to_owned(), TokenType::Or);
+        lox.reserved_words
+            .insert("print".to_owned(), TokenType::Print);
+        lox.reserved_words
+            .insert("return".to_owned(), TokenType::Return);
+        lox.reserved_words
+            .insert("super".to_owned(), TokenType::Super);
+        lox.reserved_words
+            .insert("this".to_owned(), TokenType::This);
+        lox.reserved_words
+            .insert("true".to_owned(), TokenType::True);
+        lox.reserved_words.insert("var".to_owned(), TokenType::Var);
+        lox.reserved_words
+            .insert("while".to_owned(), TokenType::While);
+
+        lox
     }
 
     pub fn run_file(&mut self, name: &str) -> Result<(), Box<dyn Error>> {
@@ -206,11 +239,13 @@ impl Scanner {
                 let c = self.peek();
                 if self.is_digit(&c) {
                     self.number(lox)
+                } else if self.is_alpha(&c) {
+                    self.identifier(lox)
                 } else {
-                let message = format!("Unexpected character '{}'", c);
-                lox.error(self.line, &message);
-                return Err(());
-            }
+                    let message = format!("Unexpected character '{}'", c);
+                    lox.error(self.line, &message);
+                    return Err(());
+                }
             }
         };
 
@@ -258,6 +293,20 @@ impl Scanner {
             "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" => true,
             _ => false,
         }
+    }
+
+    fn is_alpha(&self, c: &str) -> bool {
+        match c {
+            "a" | "b" | "c" | "d" | "e" | "f" | "g" | "h" | "i" | "j" | "k" | "l" | "m" | "n"
+            | "o" | "p" | "q" | "r" | "s" | "t" | "u" | "v" | "w" | "x" | "y" | "z" | "A" | "B"
+            | "C" | "D" | "E" | "F" | "G" | "H" | "I" | "J" | "K" | "L" | "M" | "N" | "O" | "P"
+            | "Q" | "R" | "S" | "T" | "U" | "V" | "W" | "X" | "Y" | "Z" | "_" => true,
+            _ => false,
+        }
+    }
+
+    fn is_alpha_numeric(&self, c: &str) -> bool {
+        return self.is_digit(c) || self.is_alpha(c);
     }
 
     // TODO: remove passing lox in here, make some shared error handler
@@ -325,6 +374,34 @@ impl Scanner {
         }
     }
 
+    fn identifier(&mut self, lox: &mut Lox) -> Token {
+        loop {
+            if self.is_alpha_numeric(self.peek()) {
+                self.advance();
+            } else {
+                break;
+            }
+        }
+
+        let lexeme = self.lexeme();
+        if let Some(token_type) = lox.reserved_words.get(&lexeme) {
+            let token_type = token_type.to_owned();
+            Token {
+                token_type,
+                line: self.line,
+                literal: Literal::None,
+                lexeme: self.lexeme(),
+            }
+        } else {
+            Token {
+                token_type: TokenType::Identifier,
+                line: self.line,
+                literal: Literal::None,
+                lexeme: self.lexeme(),
+            }
+        }
+    }
+
     fn new_token(&mut self, token_type: TokenType) -> Token {
         Token {
             token_type: token_type,
@@ -343,7 +420,7 @@ impl Scanner {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum TokenType {
     // Single-character tokens.
     LeftParen,

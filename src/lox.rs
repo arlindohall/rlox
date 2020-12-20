@@ -1,9 +1,6 @@
 extern crate unicode_segmentation;
 
 use std::collections::HashMap;
-use std::error::Error;
-use std::fs::File;
-use std::io::{BufRead, Read};
 use std::str::FromStr;
 
 use unicode_segmentation::UnicodeSegmentation;
@@ -12,7 +9,7 @@ type LineNumber = u16; // 64K lines
 type FileLocation = usize; // 4G chars
 
 pub struct Lox {
-    had_error: bool,
+    pub had_error: bool,
     reserved_words: HashMap<String, TokenType>,
 }
 
@@ -52,37 +49,12 @@ impl Lox {
         lox
     }
 
-    pub fn run_file(&mut self, name: &str) -> Result<(), Box<dyn Error>> {
-        let mut contents = String::new();
-        File::open(name)?.read_to_string(&mut contents)?;
-
-        self.run(contents);
-        if self.had_error {
-            std::process::exit(65);
-        } else {
-            Ok(())
-        }
-    }
-
-    pub fn run_prompt(&mut self) -> Result<(), Box<dyn Error>> {
-        println!("Getting input");
-        let stdin = std::io::stdin();
-        let lock = stdin.lock();
-
-        for line in lock.lines() {
-            self.run(line?);
-            self.had_error = false;
-        }
-
-        Ok(())
-    }
-
     pub fn error(&mut self, line: LineNumber, message: &str) {
         println!("[line={}] Error: {}", line, message);
         self.had_error = true;
     }
 
-    fn run(&mut self, snippet: String) {
+    pub fn run(&mut self, snippet: String) {
         let mut scanner = Scanner::new(snippet);
         let tokens = scanner.scan_tokens(self);
 
@@ -92,6 +64,10 @@ impl Lox {
     }
 }
 
+/*
+This is super simple, a helper enum and accessor methods, plus
+a stringify method `repr` for debugging.
+*/
 pub enum Literal {
     LoxString(String),
     LoxNumber(f64),
@@ -124,6 +100,11 @@ impl Literal {
     }
 }
 
+/*
+The first stage in the intepreter pipeline, transforms a string
+which could be multiple lines into a list of graphemes. The list
+of graphemes will go into the parser.
+*/
 pub struct Scanner {
     graphemes: Vec<String>,
     start: FileLocation,
@@ -417,6 +398,66 @@ impl Scanner {
             lexeme.push_str(&self.graphemes[i]);
         }
         lexeme
+    }
+}
+
+/*
+This section of the code corresponds to the section of the
+book that uses metaprogramming and the visitor pattern to easily
+create Java classes to represent nested expressions. The thing
+is, in my opinion, Rust is usable enough for this kind of task
+that I feel fine creating this code by hand. I might revisit
+this using metaprogramming or macros later when I feel better
+about Rust 🙂
+
+The ultimate goal here is to show how you can implement N behaviors
+for each of M data types, but with Rust that's just `impl`.
+
+So, for example, the book says to create an `AstPrinter` class
+which implements visitors for each type, binary/grouping/literal/
+unary, which each in turn produce a string. This is logically
+equivalent to `ExpressionPrinter` trait which each expression
+implements.
+*/
+pub enum Expression {
+    Binary(Box<Expression>, Token, Box<Expression>),
+    Grouping(Box<Expression>),
+    Literal(Literal),
+    Unary(Token, Box<Expression>),
+}
+
+impl Expression {
+    fn binary(l: Expression, t: Token, r: Expression) -> Expression {
+        Expression::Binary(Box::new(l), t, Box::new(r))
+    }
+
+    fn grouping(e: Expression) -> Expression {
+        Expression::Grouping(Box::new(e))
+    }
+
+    fn literal(l: Literal) -> Expression {
+        Expression::Literal(l)
+    }
+
+    fn unary(t: Token, e: Expression) -> Expression {
+        Expression::Unary(t, Box::new(e))
+    }
+}
+
+trait Printer {
+    fn print(&self) -> String;
+}
+
+impl Printer for Expression {
+    fn print(&self) -> String {
+        match self {
+            Expression::Binary(l, t, r) => format!("({} {} {})", t.lexeme, l.print(), r.print()),
+            Expression::Grouping(e) => format!("({} {})", "group", e.print()),
+            Expression::Literal(Literal::None) => format!("nil"),
+            Expression::Literal(Literal::LoxString(s)) => format!("{}", s),
+            Expression::Literal(Literal::LoxNumber(n)) => format!("{}", n),
+            Expression::Unary(t, e) => format!("({} {})", t.lexeme, e.print()),
+        }
     }
 }
 

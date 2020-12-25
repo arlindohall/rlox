@@ -49,8 +49,17 @@ impl Lox {
         lox
     }
 
-    pub fn error(&mut self, line: LineNumber, message: &str) {
-        println!("[line={}] Error: {}", line, message);
+    pub fn scan_error(&mut self, line: LineNumber, message: &str) {
+        println!("[line={}] ScanError: {}", line, message);
+        self.had_error = true;
+    }
+
+    pub fn parse_error(&mut self, token: Token, message: &str) {
+        if token.token_type == TokenType::Eof {
+            println!("[line={}] ParseError at end: {}", token.line, message);
+        } else {
+            println!("[line={}] ParseError (at '{}'): {}", token.line, token.lexeme, message);
+        }
         self.had_error = true;
     }
 
@@ -68,6 +77,7 @@ impl Lox {
 This is super simple, a helper enum and accessor methods, plus
 a stringify method `repr` for debugging.
 */
+#[derive(Clone)]
 pub enum Literal {
     LoxString(String),
     LoxNumber(f64),
@@ -224,7 +234,7 @@ impl Scanner {
                     self.identifier(lox)
                 } else {
                     let message = format!("Unexpected character '{}'", c);
-                    lox.error(self.line, &message);
+                    lox.scan_error(self.line, &message);
                     return Err(());
                 }
             }
@@ -307,7 +317,7 @@ impl Scanner {
         }
 
         if self.is_at_end() {
-            lox.error(self.line, "Unterminated string");
+            lox.scan_error(self.line, "Unterminated string");
         }
 
         let mut lexeme = String::new();
@@ -401,6 +411,190 @@ impl Scanner {
     }
 }
 
+struct Parser {
+    tokens: Vec<Token>,
+    current: FileLocation,
+    lox: Lox,
+}
+
+impl Parser {
+    fn new(lox: Lox) -> Parser {
+        Parser {
+            tokens: Vec::new(),
+            current: 0,
+            lox,
+        }
+    }
+
+    fn expression(&mut self) -> Result<Expression, ParseError> {
+        self.equality()
+    }
+
+    fn equality(&mut self) -> Result<Expression, ParseError> {
+        let mut expr = self.comparison()?;
+
+        while self.match_tokens(vec![TokenType::BangEqual, TokenType::EqualEqual]) {
+            let operator = self.previous();
+            let right = self.comparison()?;
+            expr = Expression::binary(expr, operator, right);
+        }
+
+        Ok(expr)
+    }
+
+    fn comparison(&mut self) -> Result<Expression, ParseError> {
+        let mut expr = self.terminal()?;
+
+        while self.match_tokens(vec![
+            TokenType::Greater,
+            TokenType::GreaterEqual,
+            TokenType::Less,
+            TokenType::LessEqual,
+        ]) {
+            let operator = self.previous();
+            let right = self.terminal()?;
+            expr = Expression::binary(expr, operator, right);
+        }
+
+        Ok(expr)
+    }
+
+    fn terminal(&mut self) -> Result<Expression, ParseError> {
+        let mut expr = self.factor()?;
+
+        while self.match_tokens(vec![TokenType::Minus, TokenType::Plus]) {
+            let operator = self.previous();
+            let right = self.factor()?;
+            expr = Expression::binary(expr, operator, right);
+        }
+
+        Ok(expr)
+    }
+
+    fn factor(&mut self) -> Result<Expression, ParseError> {
+        let mut expr = self.unary()?;
+
+        while self.match_tokens(vec![TokenType::Star, TokenType::Slash]) {
+            let operator = self.previous();
+            let right = self.unary()?;
+            expr = Expression::binary(expr, operator, right);
+        }
+
+        Ok(expr)
+    }
+
+    fn unary(&mut self) -> Result<Expression, ParseError> {
+        if self.match_tokens(vec![TokenType::Bang, TokenType::Minus]) {
+            let operator = self.previous();
+            let right = self.unary()?;
+            Ok(Expression::unary(operator, right))
+        } else {
+            self.primary()
+        }
+    }
+
+    fn primary(&mut self) -> Result<Expression, ParseError> {
+        if self.match_token(TokenType::False) {
+            Ok(Expression::literal(ExprLiteral::Boolean(false)))
+        } else if self.match_token(TokenType::True) {
+            Ok(Expression::literal(ExprLiteral::Boolean(true)))
+        } else if self.match_token(TokenType::Nil) {
+            Ok(Expression::literal(ExprLiteral::Nil))
+        } else if self.match_tokens(vec![TokenType::Number, TokenType::LoxString]) {
+            match self.previous().literal {
+                Literal::LoxNumber(n) => Ok(Expression::literal(ExprLiteral::Number(n))),
+                Literal::LoxString(s) => Ok(Expression::literal(ExprLiteral::String(s))),
+                Literal::None => panic!("Error handling for this branch not implemented"),
+            }
+        } else if self.match_token(TokenType::LeftParen) {
+            let expr = self.expression()?;
+            self.consume(TokenType::RightParen, "Expect ')' after expression")?;
+            Ok(Expression::grouping(expr))
+        } else {
+            let cause = self.peek();
+            let message = "Incomplete grammar: not implemented yet";
+            self.lox.parse_error(cause.clone(), message);
+            Err(ParseError {
+                message: String::from(message),
+                cause,
+            })
+        }
+    }
+
+    fn consume(&mut self, token_type: TokenType, message: &str) -> Result<Token, ParseError> {
+        if self.check(token_type) {
+            Ok(self.advance())
+        } else {
+            Err(ParseError {
+                cause: self.peek(),
+                message: String::from(message),
+            })
+        }
+    }
+
+    fn match_tokens(&mut self, tokens: Vec<TokenType>) -> bool {
+        let mut tokens = tokens.into_iter();
+        while let Some(next) = tokens.next() {
+            if self.match_token(next) {
+                return true;
+            }
+        }
+
+        false
+    }
+
+    fn match_token(&mut self, token: TokenType) -> bool {
+        if self.check(token) {
+            self.advance();
+            true
+        } else {
+            false
+        }
+    }
+
+    fn check(&self, token_type: TokenType) -> bool {
+        if self.is_at_end() {
+            false
+        } else {
+            self.peek().token_type == token_type
+        }
+    }
+
+    fn advance(&mut self) -> Token {
+        if !self.is_at_end() {
+            self.current += 1;
+        }
+
+        self.previous()
+    }
+
+    fn previous(&self) -> Token {
+        // TODO: need an invariant that we will not call this until advancing at least once, would panic
+        self.tokens[self.current - 1].clone()
+    }
+
+    fn peek(&self) -> Token {
+        // TODO: is it an invariant that we will always stop advancing at the end?
+        self.tokens[self.current].clone()
+    }
+
+    fn is_at_end(&self) -> bool {
+        self.peek().token_type == TokenType::Eof
+    }
+}
+
+pub enum ExprLiteral {
+    Boolean(bool),
+    Number(f64),
+    String(String),
+    Nil,
+}
+
+struct ParseError {
+    cause: Token,
+    message: String,
+}
+
 /*
 This section of the code corresponds to the section of the
 book that uses metaprogramming and the visitor pattern to easily
@@ -422,7 +616,7 @@ implements.
 pub enum Expression {
     Binary(Box<Expression>, Token, Box<Expression>),
     Grouping(Box<Expression>),
-    Literal(Literal),
+    Literal(ExprLiteral),
     Unary(Token, Box<Expression>),
 }
 
@@ -435,7 +629,7 @@ impl Expression {
         Expression::Grouping(Box::new(e))
     }
 
-    fn literal(l: Literal) -> Expression {
+    fn literal(l: ExprLiteral) -> Expression {
         Expression::Literal(l)
     }
 
@@ -453,15 +647,16 @@ impl Printer for Expression {
         match self {
             Expression::Binary(l, t, r) => format!("({} {} {})", t.lexeme, l.print(), r.print()),
             Expression::Grouping(e) => format!("({} {})", "group", e.print()),
-            Expression::Literal(Literal::None) => format!("nil"),
-            Expression::Literal(Literal::LoxString(s)) => format!("{}", s),
-            Expression::Literal(Literal::LoxNumber(n)) => format!("{}", n),
+            Expression::Literal(ExprLiteral::Nil) => format!("nil"),
+            Expression::Literal(ExprLiteral::String(s)) => format!("{}", s),
+            Expression::Literal(ExprLiteral::Number(n)) => format!("{}", n),
+            Expression::Literal(ExprLiteral::Boolean(b)) => format!("{}", b),
             Expression::Unary(t, e) => format!("({} {})", t.lexeme, e.print()),
         }
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, std::cmp::PartialEq)]
 pub enum TokenType {
     // Single-character tokens.
     LeftParen,
@@ -512,6 +707,7 @@ pub enum TokenType {
     Eof,
 }
 
+#[derive(Clone)]
 pub struct Token {
     token_type: TokenType,
     lexeme: String,

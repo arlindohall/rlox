@@ -58,7 +58,10 @@ impl Lox {
         if token.token_type == TokenType::Eof {
             println!("[line={}] ParseError at end: {}", token.line, message);
         } else {
-            println!("[line={}] ParseError (at '{}'): {}", token.line, token.lexeme, message);
+            println!(
+                "[line={}] ParseError (at '{}'): {}",
+                token.line, token.lexeme, message
+            );
         }
         self.had_error = true;
     }
@@ -80,32 +83,19 @@ a stringify method `repr` for debugging.
 */
 #[derive(Clone)]
 pub enum Literal {
-    LoxString(String),
-    LoxNumber(f64),
+    // TODO: Object(),
+    Boolean(bool),
+    String(String),
+    Number(f64),
     None,
 }
 
 impl Literal {
-    fn get_number(&self) -> Option<&f64> {
-        if let Literal::LoxNumber(f) = self {
-            Some(f)
-        } else {
-            None
-        }
-    }
-
-    fn get_string(&self) -> Option<&str> {
-        if let Literal::LoxString(s) = self {
-            Some(s)
-        } else {
-            None
-        }
-    }
-
     fn repr(&self) -> String {
         match self {
-            Literal::LoxString(s) => format!("Literal(string={})", s),
-            Literal::LoxNumber(n) => format!("Literal(number={})", n),
+            Literal::String(s) => format!("\"{}\"", s),
+            Literal::Number(n) => format!("{}", n),
+            Literal::Boolean(b) => format!("{}", b),
             Literal::None => format!("None"),
         }
     }
@@ -127,8 +117,8 @@ pub struct Scanner {
 impl Scanner {
     pub fn new(snippet: String) -> Scanner {
         let graphemes = UnicodeSegmentation::graphemes(&snippet[..], true)
-                .map(|grph| String::from(grph))
-                .collect::<Vec<String>>();
+            .map(|grph| String::from(grph))
+            .collect::<Vec<String>>();
         Scanner {
             start: 0,
             next: 0,
@@ -358,7 +348,7 @@ impl Scanner {
         Token {
             token_type: TokenType::LoxString,
             line: self.line,
-            literal: Literal::LoxString(lexeme.clone()), // TODO is this dumb?
+            literal: Literal::String(lexeme.clone()), // TODO is this dumb?
             lexeme: lexeme,
         }
     }
@@ -391,7 +381,7 @@ impl Scanner {
         Token {
             token_type: TokenType::Number,
             line: self.line,
-            literal: Literal::LoxNumber(d),
+            literal: Literal::Number(d),
             lexeme: self.lexeme(),
         }
     }
@@ -442,6 +432,76 @@ impl Scanner {
     }
 }
 
+#[derive(Debug, Clone, std::cmp::PartialEq)]
+pub enum TokenType {
+    // Single-character tokens.
+    LeftParen,
+    RightParen,
+    LeftBrace,
+    RightBrace,
+    Comma,
+    Dot,
+    Minus,
+    Plus,
+    Semicolon,
+    Slash,
+    Star,
+
+    // One or two character tokens.
+    Bang,
+    BangEqual,
+    Equal,
+    EqualEqual,
+    Greater,
+    GreaterEqual,
+    Less,
+    LessEqual,
+
+    // Literals.
+    Identifier,
+    LoxString, // String is a Rust type
+    Number,
+
+    // Keywords.
+    And,
+    Class,
+    Else,
+    False,
+    Fun,
+    For,
+    If,
+    Nil,
+    Or,
+    Print,
+    Return,
+    Super,
+    This,
+    True,
+    Var,
+    While,
+
+    Eof,
+}
+
+#[derive(Clone)]
+pub struct Token {
+    token_type: TokenType,
+    lexeme: String,
+    literal: Literal,
+    line: LineNumber,
+}
+
+impl Token {
+    fn to_string(&self) -> String {
+        format!(
+            "Token(token_type={:?}, lexeme=\"{}\", literal={})",
+            self.token_type,
+            self.lexeme,
+            self.literal.repr(),
+        )
+    }
+}
+
 struct Parser {
     tokens: Vec<Token>,
     current: FileLocation,
@@ -449,10 +509,7 @@ struct Parser {
 
 impl Parser {
     fn new(tokens: Vec<Token>) -> Parser {
-        Parser {
-            current: 0,
-            tokens,
-        }
+        Parser { current: 0, tokens }
     }
 
     fn parse(&mut self, lox: &mut Lox) -> Result<Expression, ()> {
@@ -489,7 +546,7 @@ impl Parser {
             } else {
                 self.advance();
             }
-        };
+        }
     }
 
     fn expression(&mut self, lox: &mut Lox) -> Result<Expression, ParseError> {
@@ -561,17 +618,15 @@ impl Parser {
 
     fn primary(&mut self, lox: &mut Lox) -> Result<Expression, ParseError> {
         if self.match_token(TokenType::False) {
-            Ok(Expression::literal(ExprLiteral::Boolean(false)))
+            Ok(Expression::literal(Literal::Boolean(false)))
         } else if self.match_token(TokenType::True) {
-            Ok(Expression::literal(ExprLiteral::Boolean(true)))
-        } else if self.match_token(TokenType::Nil) {
-            Ok(Expression::literal(ExprLiteral::Nil))
-        } else if self.match_tokens(vec![TokenType::Number, TokenType::LoxString]) {
-            match self.previous().literal {
-                Literal::LoxNumber(n) => Ok(Expression::literal(ExprLiteral::Number(n))),
-                Literal::LoxString(s) => Ok(Expression::literal(ExprLiteral::String(s))),
-                Literal::None => panic!("Error handling for this branch not implemented"),
-            }
+            Ok(Expression::literal(Literal::Boolean(true)))
+        } else if self.match_tokens(vec![
+            TokenType::Nil,
+            TokenType::Number,
+            TokenType::LoxString,
+        ]) {
+            Ok(Expression::literal(self.previous().literal))
         } else if self.match_token(TokenType::LeftParen) {
             let expr = self.expression(lox)?;
             self.consume(TokenType::RightParen, "Expect ')' after expression")?;
@@ -649,13 +704,6 @@ impl Parser {
     }
 }
 
-pub enum ExprLiteral {
-    Boolean(bool),
-    Number(f64),
-    String(String),
-    Nil,
-}
-
 struct ParseError {
     cause: Token,
     message: String,
@@ -679,10 +727,11 @@ unary, which each in turn produce a string. This is logically
 equivalent to `ExpressionPrinter` trait which each expression
 implements.
 */
+#[derive(Clone)]
 pub enum Expression {
     Binary(Box<Expression>, Token, Box<Expression>),
     Grouping(Box<Expression>),
-    Literal(ExprLiteral),
+    Literal(Literal),
     Unary(Token, Box<Expression>),
 }
 
@@ -695,99 +744,143 @@ impl Expression {
         Expression::Grouping(Box::new(e))
     }
 
-    fn literal(l: ExprLiteral) -> Expression {
+    fn literal(l: Literal) -> Expression {
         Expression::Literal(l)
     }
 
     fn unary(t: Token, e: Expression) -> Expression {
         Expression::Unary(t, Box::new(e))
     }
+
+    fn unbox(expr: Box<Expression>) -> Expression {
+        match *expr {
+            Expression::Binary(left, token, right) => Expression::Binary(left, token, right),
+            Expression::Unary(token, expr) => Expression::Unary(token, expr),
+            Expression::Literal(lit) => Expression::Literal(lit),
+            Expression::Grouping(expr) => Expression::Grouping(expr),
+        }
+    }
 }
 
-trait Printer {
+trait AstPrinter {
     fn print(&self) -> String;
 }
 
-impl Printer for Expression {
+/*
+The Interpreter consumes the expression completely because it pulls the
+components out to evaluate them. If you need to re-use the whole
+expression, you should clone it first.
+*/
+trait Interpreter {
+    fn interpret(self) -> Result<LoxObject, LoxError>;
+}
+
+impl AstPrinter for Expression {
     fn print(&self) -> String {
         match self {
             Expression::Binary(l, t, r) => format!("({} {} {})", t.lexeme, l.print(), r.print()),
             Expression::Grouping(e) => format!("{}", e.print()),
-            Expression::Literal(ExprLiteral::Nil) => format!("nil"),
-            Expression::Literal(ExprLiteral::String(s)) => format!("{}", s),
-            Expression::Literal(ExprLiteral::Number(n)) => format!("{}", n),
-            Expression::Literal(ExprLiteral::Boolean(b)) => format!("{}", b),
+            Expression::Literal(l) => l.repr(),
             Expression::Unary(t, e) => format!("({} {})", t.lexeme, e.print()),
         }
     }
 }
 
-#[derive(Debug, Clone, std::cmp::PartialEq)]
-pub enum TokenType {
-    // Single-character tokens.
-    LeftParen,
-    RightParen,
-    LeftBrace,
-    RightBrace,
-    Comma,
-    Dot,
-    Minus,
-    Plus,
-    Semicolon,
-    Slash,
-    Star,
+impl Interpreter for Expression {
+    fn interpret(self) -> Result<LoxObject, LoxError> {
+        match self {
+            Expression::Grouping(expr) => expr.interpret(),
+            Expression::Literal(lit) => match lit {
+                Literal::Boolean(b) => Ok(LoxObject::Boolean(b)),
+                Literal::String(s) => Ok(LoxObject::String(s)),
+                Literal::Number(n) => Ok(LoxObject::Number(n)),
+                Literal::None => Ok(LoxObject::Nil),
+            },
+            Expression::Unary(op, value) => {
+                let value = Expression::unbox(value);
+                let obj = value.clone().interpret()?;
+                match op.token_type {
+                    TokenType::Minus => {
+                        if let LoxObject::Number(n) = obj {
+                            Ok(LoxObject::Number(-n))
+                        } else {
+                            Err(LoxError {
+                                cause: value,
+                                message: format!(
+                                    "cannot negate {} — expected Number, found {}",
+                                    obj.print(),
+                                    obj.get_type()
+                                ),
+                                err_type: LoxErrorType::TypeError,
+                            })
+                        }
+                    },
+                    TokenType::Bang => {
+                        if let LoxObject::Boolean(b) = obj {
+                            Ok(LoxObject::Boolean(!b))
+                        } else {
+                            Err(LoxError {
+                                cause: value,
+                                message: format!(
+                                    "cannot take logical inverse of {} — expected Boolean, found {}",
+                                    obj.print(),
+                                    obj.get_type()
+                                ),
+                                err_type: LoxErrorType::TypeError,
+                            })
+                        }
+                    },
+                    _ => Err(LoxError {
+                        cause: value,
+                        message: format!("'{:?}'", op.token_type),
+                        err_type: LoxErrorType::UnknownOperator,
+                    }),
+                }
+            }
+            Expression::Binary(left, op, right) => panic!("unimplemented"),
+        }
+    }
+}
 
-    // One or two character tokens.
-    Bang,
-    BangEqual,
-    Equal,
-    EqualEqual,
-    Greater,
-    GreaterEqual,
-    Less,
-    LessEqual,
+enum LoxErrorType {
+    TypeError,
+    UnknownOperator,
+}
 
-    // Literals.
-    Identifier,
-    LoxString, // String is a Rust type
-    Number,
+struct LoxError {
+    cause: Expression,
+    message: String,
+    err_type: LoxErrorType,
+}
 
-    // Keywords.
-    And,
-    Class,
-    Else,
-    False,
-    Fun,
-    For,
-    If,
+enum LoxObject {
+    Boolean(bool),
+    String(String),
+    Number(f64),
+    Object(HashMap<String, Box<LoxObject>>),
     Nil,
-    Or,
-    Print,
-    Return,
-    Super,
-    This,
-    True,
-    Var,
-    While,
-
-    Eof,
 }
 
-#[derive(Clone)]
-pub struct Token {
-    token_type: TokenType,
-    lexeme: String,
-    literal: Literal,
-    line: LineNumber,
-}
+impl LoxObject {
+    fn print(&self) -> String {
+        match self {
+            LoxObject::Boolean(b) => format!("{}", b),
+            LoxObject::String(s) => s.clone(),
+            LoxObject::Number(n) => format!("{}", n),
+            LoxObject::Object(o) => String::from("<Object>"),
+            LoxObject::Nil => String::from("nil"),
+        }
+    }
 
-impl Token {
-    fn to_string(&self) -> String {
-        format!(
-            "Token(token_type={:?}, lexeme=\"{}\", literal={})",
-            self.token_type,
-            self.lexeme,
-            self.literal.repr(),
-        )
+    fn get_type(&self) -> String {
+        let s = match self {
+            LoxObject::Boolean(_) => "Boolean",
+            LoxObject::String(_) => "String",
+            LoxObject::Number(_) => "Number",
+            LoxObject::Object(_) => "Object",
+            LoxObject::Nil => "Nil",
+        };
+
+        String::from(s)
     }
 }

@@ -262,8 +262,25 @@ impl Scanner {
         &self.graphemes[self.next - 1]
     }
 
+    /*
+    Basically for both peek and peek_next, we're checking for what the next
+    or character after next contains. If we call `peek` during the match statement
+    of the scan_token (main block of scanning logic) then we're actually looking
+    at the next character, but if we call it before then, we're looking at the
+    character currently being scanned (about to be scanned).
+
+    What this means is that both peek and peek_next can look into the future, and
+    can go over the length of the `graphemes` vector. If that happens, we'll panic
+    and quit the whole program. But wait, that's bad! So instead we just guard and
+    return `\0` as a way to pretend the rest of memory after the end of the vec
+    is all zeros, which as far as the interpreter is concerned, makes sense.
+    */
     fn peek(&self) -> &str {
-        &self.graphemes[self.next]
+        if self.next + 1 >= self.graphemes.len() {
+            "\0"
+        } else {
+            &self.graphemes[self.next]
+        }
     }
 
     fn peek_next(&self) -> &str {

@@ -66,9 +66,10 @@ impl Lox {
     pub fn run(&mut self, snippet: String) {
         let mut scanner = Scanner::new(snippet);
         let tokens = scanner.scan_tokens(self);
-
-        for token in tokens {
-            println!("{}", token.to_string());
+        let mut parser = Parser::new(tokens);
+        match parser.parse(self) {
+            Ok(expr) => println!("{}", expr.print()),
+            Err(e) => println!("ParseError: "),
         }
     }
 }
@@ -120,17 +121,20 @@ pub struct Scanner {
     start: FileLocation,
     next: FileLocation,
     line: LineNumber,
+    col: LineNumber,
 }
 
 impl Scanner {
     pub fn new(snippet: String) -> Scanner {
-        Scanner {
-            graphemes: UnicodeSegmentation::graphemes(&snippet[..], true)
+        let graphemes = UnicodeSegmentation::graphemes(&snippet[..], true)
                 .map(|grph| String::from(grph))
-                .collect::<Vec<String>>(),
+                .collect::<Vec<String>>();
+        Scanner {
             start: 0,
             next: 0,
+            col: 1,
             line: 1,
+            graphemes,
         }
     }
 
@@ -159,7 +163,9 @@ impl Scanner {
     // implement what Bob calls separation of the code that reports errors
     // from the code that handles errors
     fn scan_token(&mut self, lox: &mut Lox) -> Result<Token, ()> {
+        self.col += 1;
         let c = self.advance();
+        // println!("Scanning token starting at c={}", c);
         let token = match c {
             "(" => self.new_token(TokenType::LeftParen),
             ")" => self.new_token(TokenType::RightParen),
@@ -221,25 +227,27 @@ impl Scanner {
             "\t" => return Err(()),
             "\n" => {
                 self.line += 1;
+                self.col = 1;
                 return Err(());
             }
             // TODO: remove passing lox in here, make some shared error handler
             "\"" => self.string(lox),
             _ => {
                 // Borrow c again as immutable to avoid reference error
-                let c = self.peek();
+                let c = self.prev();
                 if self.is_digit(&c) {
                     self.number(lox)
                 } else if self.is_alpha(&c) {
                     self.identifier(lox)
                 } else {
-                    let message = format!("Unexpected character '{}'", c);
+                    let message = format!("Unexpected character '{}' at [col={}]", c, self.col);
                     lox.scan_error(self.line, &message);
                     return Err(());
                 }
             }
         };
 
+        // println!("Scanned token={}", token.to_string());
         Ok(token)
     }
 
@@ -247,6 +255,11 @@ impl Scanner {
         let current = &self.graphemes[self.next];
         self.next += 1;
         current
+    }
+
+    // TODO: Enforce calling only after one call of advance
+    fn prev(&self) -> &str {
+        &self.graphemes[self.next - 1]
     }
 
     fn peek(&self) -> &str {
@@ -336,6 +349,7 @@ impl Scanner {
     fn number(&mut self, _lox: &mut Lox) -> Token {
         loop {
             let c = self.peek();
+            // println!("Looking for number c={}", c);
             if self.is_digit(c) {
                 self.advance();
             } else {
@@ -414,36 +428,71 @@ impl Scanner {
 struct Parser {
     tokens: Vec<Token>,
     current: FileLocation,
-    lox: Lox,
 }
 
 impl Parser {
-    fn new(lox: Lox) -> Parser {
+    fn new(tokens: Vec<Token>) -> Parser {
         Parser {
-            tokens: Vec::new(),
             current: 0,
-            lox,
+            tokens,
         }
     }
 
-    fn expression(&mut self) -> Result<Expression, ParseError> {
-        self.equality()
+    fn parse(&mut self, lox: &mut Lox) -> Result<Expression, ()> {
+        match self.expression(lox) {
+            Ok(e) => Ok(e),
+            // Book does `return null` here and says we will revisit
+            // When we revisit we'll update this branch
+            Err(e) => Err(()),
+        }
     }
 
-    fn equality(&mut self) -> Result<Expression, ParseError> {
-        let mut expr = self.comparison()?;
+    fn synchronize(&mut self) -> () {
+        self.advance();
+
+        while !self.is_at_end() {
+            if self.previous().token_type == TokenType::Semicolon {
+                break;
+            }
+
+            let found = match self.peek().token_type {
+                TokenType::Class => true,
+                TokenType::Fun => true,
+                TokenType::Var => true,
+                TokenType::For => true,
+                TokenType::If => true,
+                TokenType::While => true,
+                TokenType::Print => true,
+                TokenType::Return => true,
+                _ => false,
+            };
+
+            if found {
+                break;
+            } else {
+                self.advance();
+            }
+        };
+    }
+
+    fn expression(&mut self, lox: &mut Lox) -> Result<Expression, ParseError> {
+        self.equality(lox)
+    }
+
+    fn equality(&mut self, lox: &mut Lox) -> Result<Expression, ParseError> {
+        let mut expr = self.comparison(lox)?;
 
         while self.match_tokens(vec![TokenType::BangEqual, TokenType::EqualEqual]) {
             let operator = self.previous();
-            let right = self.comparison()?;
+            let right = self.comparison(lox)?;
             expr = Expression::binary(expr, operator, right);
         }
 
         Ok(expr)
     }
 
-    fn comparison(&mut self) -> Result<Expression, ParseError> {
-        let mut expr = self.terminal()?;
+    fn comparison(&mut self, lox: &mut Lox) -> Result<Expression, ParseError> {
+        let mut expr = self.terminal(lox)?;
 
         while self.match_tokens(vec![
             TokenType::Greater,
@@ -452,48 +501,48 @@ impl Parser {
             TokenType::LessEqual,
         ]) {
             let operator = self.previous();
-            let right = self.terminal()?;
+            let right = self.terminal(lox)?;
             expr = Expression::binary(expr, operator, right);
         }
 
         Ok(expr)
     }
 
-    fn terminal(&mut self) -> Result<Expression, ParseError> {
-        let mut expr = self.factor()?;
+    fn terminal(&mut self, lox: &mut Lox) -> Result<Expression, ParseError> {
+        let mut expr = self.factor(lox)?;
 
         while self.match_tokens(vec![TokenType::Minus, TokenType::Plus]) {
             let operator = self.previous();
-            let right = self.factor()?;
+            let right = self.factor(lox)?;
             expr = Expression::binary(expr, operator, right);
         }
 
         Ok(expr)
     }
 
-    fn factor(&mut self) -> Result<Expression, ParseError> {
-        let mut expr = self.unary()?;
+    fn factor(&mut self, lox: &mut Lox) -> Result<Expression, ParseError> {
+        let mut expr = self.unary(lox)?;
 
         while self.match_tokens(vec![TokenType::Star, TokenType::Slash]) {
             let operator = self.previous();
-            let right = self.unary()?;
+            let right = self.unary(lox)?;
             expr = Expression::binary(expr, operator, right);
         }
 
         Ok(expr)
     }
 
-    fn unary(&mut self) -> Result<Expression, ParseError> {
+    fn unary(&mut self, lox: &mut Lox) -> Result<Expression, ParseError> {
         if self.match_tokens(vec![TokenType::Bang, TokenType::Minus]) {
             let operator = self.previous();
-            let right = self.unary()?;
+            let right = self.unary(lox)?;
             Ok(Expression::unary(operator, right))
         } else {
-            self.primary()
+            self.primary(lox)
         }
     }
 
-    fn primary(&mut self) -> Result<Expression, ParseError> {
+    fn primary(&mut self, lox: &mut Lox) -> Result<Expression, ParseError> {
         if self.match_token(TokenType::False) {
             Ok(Expression::literal(ExprLiteral::Boolean(false)))
         } else if self.match_token(TokenType::True) {
@@ -507,13 +556,13 @@ impl Parser {
                 Literal::None => panic!("Error handling for this branch not implemented"),
             }
         } else if self.match_token(TokenType::LeftParen) {
-            let expr = self.expression()?;
+            let expr = self.expression(lox)?;
             self.consume(TokenType::RightParen, "Expect ')' after expression")?;
             Ok(Expression::grouping(expr))
         } else {
             let cause = self.peek();
-            let message = "Incomplete grammar: not implemented yet";
-            self.lox.parse_error(cause.clone(), message);
+            let message = "Expected expression";
+            lox.parse_error(cause.clone(), message);
             Err(ParseError {
                 message: String::from(message),
                 cause,
@@ -646,7 +695,7 @@ impl Printer for Expression {
     fn print(&self) -> String {
         match self {
             Expression::Binary(l, t, r) => format!("({} {} {})", t.lexeme, l.print(), r.print()),
-            Expression::Grouping(e) => format!("({} {})", "group", e.print()),
+            Expression::Grouping(e) => format!("{}", e.print()),
             Expression::Literal(ExprLiteral::Nil) => format!("nil"),
             Expression::Literal(ExprLiteral::String(s)) => format!("{}", s),
             Expression::Literal(ExprLiteral::Number(n)) => format!("{}", n),

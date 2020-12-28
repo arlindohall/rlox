@@ -71,7 +71,14 @@ impl Lox {
         let tokens = scanner.scan_tokens(self);
         let mut parser = Parser::new(tokens);
         match parser.parse(self) {
-            Ok(expr) => println!("{}", expr.print()),
+            Ok(expr) => {
+                // println!("Expr: {}", expr.print());
+                match expr.interpret() {
+                    Ok(value) => println!("{}", value.print()),
+                    Err(e) => println!("Error: {}", e.to_string()),
+                }
+            }
+            // TODO: fix error handling
             Err(e) => println!("ParseError: "),
         }
     }
@@ -266,7 +273,7 @@ impl Scanner {
     is all zeros, which as far as the interpreter is concerned, makes sense.
     */
     fn peek(&self) -> &str {
-        if self.next + 1 >= self.graphemes.len() {
+        if self.next >= self.graphemes.len() {
             "\0"
         } else {
             &self.graphemes[self.next]
@@ -322,11 +329,13 @@ impl Scanner {
 
     // TODO: remove passing lox in here, make some shared error handler
     fn string(&mut self, lox: &mut Lox) -> Token {
+        // println!("Scanning string starting at c={}{}", self.prev(), self.peek());
         loop {
             if self.is_at_end() {
                 break;
             };
             let c = self.advance();
+            // println!("Scanning character c={}", c);
             if c == "\"" {
                 break;
             }
@@ -336,7 +345,11 @@ impl Scanner {
             }
         }
 
-        if self.is_at_end() {
+        // If we're at the end, but we've advanced and the last character is a
+        // quotation, that's actually okay. We're probably in the interactive mode
+        // and didn't have another character after the end of the string, i.e.
+        // > "a"
+        if self.is_at_end() && !(self.prev() == "\"" && self.next > self.start) {
             lox.scan_error(self.line, "Unterminated string");
         }
 
@@ -760,6 +773,43 @@ impl Expression {
             Expression::Grouping(expr) => Expression::Grouping(expr),
         }
     }
+
+    fn is_truthy(obj: LoxObject) -> bool {
+        match obj {
+            LoxObject::Nil => false,
+            LoxObject::Boolean(b) => b,
+            _ => true,
+        }
+    }
+
+    fn apply_compare(
+        self,
+        op: TokenType,
+        left: LoxObject,
+        right: LoxObject,
+    ) -> Result<LoxObject, LoxError> {
+        if let (LoxObject::Number(l), LoxObject::Number(r)) = (left, right) {
+            let result = match op {
+                TokenType::Greater => Ok(l > r),
+                TokenType::GreaterEqual => Ok(l >= r),
+                TokenType::Less => Ok(l < r),
+                TokenType::LessEqual => Ok(l <= r),
+                _ => Err(LoxError {
+                    cause: self,
+                    message: format!("unable to apply {:?} as a comparison operator", op),
+                    err_type: LoxErrorType::UnknownOperator,
+                }),
+            };
+            result.map(|b| LoxObject::Boolean(b))
+        } else {
+            Err(LoxError {
+                cause: self,
+                // TODO: better messaging here
+                message: format!("cannot apply operation {:?} to non-numeric types", op),
+                err_type: LoxErrorType::TypeError,
+            })
+        }
+    }
 }
 
 trait AstPrinter {
@@ -788,7 +838,7 @@ impl AstPrinter for Expression {
 
 impl Interpreter for Expression {
     fn interpret(self) -> Result<LoxObject, LoxError> {
-        match self {
+        match self.clone() {
             Expression::Grouping(expr) => expr.interpret(),
             Expression::Literal(lit) => match lit {
                 Literal::Boolean(b) => Ok(LoxObject::Boolean(b)),
@@ -805,54 +855,125 @@ impl Interpreter for Expression {
                             Ok(LoxObject::Number(-n))
                         } else {
                             Err(LoxError {
-                                cause: value,
+                                cause: self,
                                 message: format!(
-                                    "cannot negate {} — expected Number, found {}",
+                                    "cannot negate `{}` — expected Number, found {}",
                                     obj.print(),
                                     obj.get_type()
                                 ),
                                 err_type: LoxErrorType::TypeError,
                             })
                         }
-                    },
+                    }
                     TokenType::Bang => {
-                        if let LoxObject::Boolean(b) = obj {
-                            Ok(LoxObject::Boolean(!b))
+                        if Self::is_truthy(obj) {
+                            Ok(LoxObject::Boolean(false))
                         } else {
-                            Err(LoxError {
-                                cause: value,
-                                message: format!(
-                                    "cannot take logical inverse of {} — expected Boolean, found {}",
-                                    obj.print(),
-                                    obj.get_type()
-                                ),
-                                err_type: LoxErrorType::TypeError,
-                            })
+                            Ok(LoxObject::Boolean(true))
                         }
-                    },
+                    }
                     _ => Err(LoxError {
-                        cause: value,
+                        cause: self,
                         message: format!("'{:?}'", op.token_type),
                         err_type: LoxErrorType::UnknownOperator,
                     }),
                 }
             }
-            Expression::Binary(left, op, right) => panic!("unimplemented"),
+            Expression::Binary(left, op, right) => {
+                let rval = Expression::unbox(right);
+                let lval = Expression::unbox(left);
+
+                let robj = rval.clone().interpret()?;
+                let lobj = lval.clone().interpret()?;
+
+                match op.token_type {
+                    TokenType::Minus => match (lobj, robj) {
+                        (LoxObject::Number(l), LoxObject::Number(r)) => {
+                            Ok(LoxObject::Number(l - r))
+                        }
+                        _ => Err(LoxError {
+                            cause: self,
+                            message: format!("cannot subtract non-numbers"),
+                            err_type: LoxErrorType::TypeError,
+                        }),
+                    },
+                    TokenType::Slash => match (lobj, robj) {
+                        // TODO: don't use pattern here, will cause error
+                        (LoxObject::Number(l), LoxObject::Number(0.0)) => Err(LoxError {
+                            cause: self,
+                            message: format!("divide by zero"),
+                            err_type: LoxErrorType::DivideByZeroError,
+                        }),
+                        (LoxObject::Number(l), LoxObject::Number(r)) => {
+                            Ok(LoxObject::Number(l / r))
+                        }
+                        _ => Err(LoxError {
+                            cause: self,
+                            message: format!("cannot divide non-numbers"),
+                            err_type: LoxErrorType::TypeError,
+                        }),
+                    },
+                    TokenType::Star => match (lobj, robj) {
+                        (LoxObject::Number(l), LoxObject::Number(r)) => {
+                            Ok(LoxObject::Number(l * r))
+                        }
+                        _ => Err(LoxError {
+                            cause: self,
+                            message: format!("cannot multiply non-numbers"),
+                            err_type: LoxErrorType::TypeError,
+                        }),
+                    },
+                    TokenType::Plus => match (lobj, robj) {
+                        (LoxObject::Number(l), LoxObject::Number(r)) => {
+                            Ok(LoxObject::Number(l + r))
+                        }
+                        (LoxObject::String(l), LoxObject::String(r)) => {
+                            Ok(LoxObject::String(l.clone() + &r))
+                        }
+                        _ => Err(LoxError {
+                            cause: self,
+                            // TODO: improve error reporting
+                            message: format!("addition is defined for numbers and strings"),
+                            err_type: LoxErrorType::TypeError,
+                        }),
+                    },
+                    TokenType::Greater
+                    | TokenType::GreaterEqual
+                    | TokenType::Less
+                    | TokenType::LessEqual => self.apply_compare(op.token_type, lobj, robj),
+                    TokenType::EqualEqual => Ok(LoxObject::Boolean(lobj == robj)),
+                    TokenType::BangEqual => Ok(LoxObject::Boolean(lobj != robj)),
+                    _ => panic!("unimplemented"),
+                }
+            }
         }
     }
 }
 
+#[derive(Debug)]
 enum LoxErrorType {
     TypeError,
     UnknownOperator,
+    DivideByZeroError,
 }
 
+// TOOD: improve error handling by making this a shared enum
+// also return lox errors from the lox error and runtime error
+// methods. The error returned will be the one passed up through
+// the Result return type/ ? operator
 struct LoxError {
     cause: Expression,
     message: String,
     err_type: LoxErrorType,
 }
 
+impl LoxError {
+    fn to_string(&self) -> String {
+        format!("    ({:?}) --- {}", self.err_type, self.message)
+    }
+}
+
+#[derive(PartialEq)]
 enum LoxObject {
     Boolean(bool),
     String(String),
@@ -862,6 +983,7 @@ enum LoxObject {
 }
 
 impl LoxObject {
+    // TODO: change to to_string
     fn print(&self) -> String {
         match self {
             LoxObject::Boolean(b) => format!("{}", b),

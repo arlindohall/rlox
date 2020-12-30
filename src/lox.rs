@@ -10,6 +10,7 @@ type FileLocation = usize; // 4G chars
 
 pub struct Lox {
     pub had_error: bool,
+    pub had_runtime_error: bool,
     reserved_words: HashMap<String, TokenType>,
 }
 
@@ -17,6 +18,7 @@ impl Lox {
     pub fn new() -> Lox {
         let mut lox = Lox {
             had_error: false,
+            had_runtime_error: false,
             reserved_words: HashMap::new(),
         };
 
@@ -59,11 +61,19 @@ impl Lox {
             println!("[line={}] ParseError at end: {}", token.line, message);
         } else {
             println!(
-                "[line={}] ParseError (at '{}'): {}",
+                "[line={}] ParseError (at `{}`): {}",
                 token.line, token.lexeme, message
             );
         }
         self.had_error = true;
+    }
+
+    pub fn interpreter_error(&mut self, expression: Expression, message: &str) {
+        println!(
+            "InterpreterError (at `{}`): {}",
+            expression.print(), message
+        );
+        self.had_runtime_error = true;
     }
 
     pub fn run(&mut self, snippet: String) {

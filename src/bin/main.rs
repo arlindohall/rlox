@@ -29,6 +29,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         lox.run(contents);
         if lox.had_error {
             std::process::exit(65);
+        } else if lox.had_runtime_error {
+            std::process::exit(70);
         } else {
             println!("Done!");
         }
@@ -46,37 +48,3 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     Ok(())
 }
-
-/*
-This function doesn't work, first of all. It needs to be run in
-the scope of lox. However, it shows off the behavior from the
-section on visitor patterns without chaning the overall program.
-
-It'll probably be redundant after a few more chapters so I'll
-remove it then.
-*/
-// use rlox::lox::{Token, Expression};
-// fn main() -> () {
-//     let expression = Expression::binary(
-//         Expression::unary(
-//             Token {
-//                 token_type: TokenType::Minus,
-//                 lexeme: String::from("-"),
-//                 literal: Literal::None,
-//                 line: 1
-//             },
-//             Expression::literal(Literal::LoxNumber(123.0)),
-//         ),
-//         Token {
-//             token_type: TokenType::Star ,
-//             lexeme: String::from("*"),
-//             literal: Literal::None,
-//             line: 1
-//         },
-//         Expression::grouping(
-//             Expression::literal(Literal::LoxNumber(45.67))
-//         ),
-//     );
-
-//     println!("{}", expression.print());
-// }

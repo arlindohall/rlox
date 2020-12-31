@@ -9,12 +9,12 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut lox = Lox::new();
 
     /*
-    The book has two methods, run_file and run_prompt, that handle
-    two different behaviors. However, I think this way of organizing
-    makes more sense, where the main class handles all IO operations
-    directly (it could run_prompt and run_file, but I don't think
-    there's a clear benefit to separating them into two methods) and
-    delegates all "pure" behavior to the Lox class.
+    The book has two methods, run_file and run_prompt, that handle two
+    different behaviors. However, I think this way of organizing makes more
+    sense, where the main class handles all IO operations directly (it could
+    run_prompt and run_file, but I don't think there's a clear benefit to
+    separating them into two methods) and delegates all "pure" behavior to
+    the Lox class.
 
     This way Lox doesn't need to know about File IO.
     */
@@ -40,6 +40,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         let lock = stdin.lock();
 
         for line in lock.lines() {
+            // TODO: Better error handling here, probably addressed in book
             lox.run(line?);
             lox.had_error = false;
         }

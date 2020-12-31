@@ -2,11 +2,64 @@ extern crate unicode_segmentation;
 
 use std::collections::HashMap;
 use std::str::FromStr;
+use std::cmp::PartialEq;
 
 use unicode_segmentation::UnicodeSegmentation;
 
 type LineNumber = u16; // 64K lines
 type FileLocation = usize; // 4G chars
+type LoxNumberLiteral = f64; // Numbers are floats, can be improved
+
+#[derive(Debug)]
+pub enum LoxError {
+    ScanError {
+        line: LineNumber,
+        message: String,
+        err_type: LoxErrorType,
+    },
+    ParseError {
+        cause: Token,
+        message: String,
+        err_type: LoxErrorType,
+    },
+    RuntimeError {
+        cause: Expression,
+        message: String,
+        err_type: LoxErrorType,
+    },
+}
+
+impl LoxError {
+    fn to_string(&self) -> String {
+        let err_type = match self {
+            LoxError::ScanError { err_type, .. } => err_type,
+            LoxError::ParseError { err_type, .. } => err_type,
+            LoxError::RuntimeError { err_type, .. } => err_type,
+        };
+        let message = match self {
+            LoxError::ScanError { message, .. } => message,
+            LoxError::ParseError { message, .. } => message,
+            LoxError::RuntimeError { message, .. } => message,
+        };
+        format!("({:?}) --- {}", err_type, message)
+    }
+}
+
+#[derive(Debug)]
+pub enum LoxErrorType {
+    // Scan errors
+    UnexpectedCharacter,
+    UnterminatedString,
+
+    // Parse errors
+    ExpressionError,
+    IncompleteExpression,
+
+    // Runtime errors
+    TypeError,
+    UnknownOperator,
+    DivideByZeroError,
+}
 
 pub struct Lox {
     pub had_error: bool,
@@ -51,59 +104,99 @@ impl Lox {
         lox
     }
 
-    pub fn scan_error(&mut self, line: LineNumber, message: &str) {
-        println!("[line={}] ScanError: {}", line, message);
+    pub fn scan_error(
+        &mut self,
+        line: LineNumber,
+        err_type: LoxErrorType,
+        message: &str,
+    ) -> LoxError {
+        println!("[line={}] ScanError ({:?}): {}", line, err_type, message);
         self.had_error = true;
+
+        LoxError::ScanError {
+            message: String::from(message),
+            err_type,
+            line,
+        }
     }
 
-    pub fn parse_error(&mut self, token: Token, message: &str) {
+    pub fn parse_error(&mut self, token: Token, err_type: LoxErrorType, message: &str) -> LoxError {
         if token.token_type == TokenType::Eof {
-            println!("[line={}] ParseError at end: {}", token.line, message);
+            println!(
+                "[line={}] ParseError ({:?} at end): {}",
+                token.line, err_type, message
+            );
         } else {
             println!(
-                "[line={}] ParseError (at `{}`): {}",
-                token.line, token.lexeme, message
+                "[line={}] ParseError ({:?} at `{}`): {}",
+                token.line, err_type, token.lexeme, message
             );
         }
         self.had_error = true;
+
+        LoxError::ParseError {
+            message: String::from(message),
+            cause: token,
+            err_type,
+        }
     }
 
-    pub fn interpreter_error(&mut self, expression: Expression, message: &str) {
+    pub fn runtime_error(
+        &mut self,
+        expression: Expression,
+        err_type: LoxErrorType,
+        message: &str,
+    ) -> LoxError {
         println!(
-            "InterpreterError (at `{}`): {}",
-            expression.print(), message
+            "RuntimeError ({:?} at `{}`): {}",
+            err_type,
+            expression.to_string(),
+            message
         );
         self.had_runtime_error = true;
+
+        LoxError::RuntimeError {
+            message: String::from(message),
+            cause: expression,
+            err_type,
+        }
     }
 
-    pub fn run(&mut self, snippet: String) {
+    pub fn run(&mut self, snippet: String) -> Result<(), LoxError> {
         let mut scanner = Scanner::new(snippet);
-        let tokens = scanner.scan_tokens(self);
+        let tokens = scanner.scan_tokens(self)?;
         let mut parser = Parser::new(tokens);
-        match parser.parse(self) {
-            Ok(expr) => {
-                // println!("Expr: {}", expr.print());
-                match expr.interpret() {
-                    Ok(value) => println!("{}", value.print()),
-                    Err(e) => println!("Error: {}", e.to_string()),
-                }
-            }
-            // TODO: fix error handling
-            Err(e) => println!("ParseError: "),
-        }
+        let expr = parser.parse(self)?;
+        let value = expr.interpret(self)?;
+        println!("{}", value.to_string());
+
+        Ok(())
     }
 }
 
+/*******************************************************************************
+********************************************************************************
+                                SCANNER
+********************************************************************************
+
+This section contains the first logical division of the interpreter: the
+scanner. It takes the input, which has already been grouped into graphemes
+(utf-8 character clusters, useful so we can act on what users think of as
+characters), and converts each string into tokens. The tokens can then be
+passed off to the parser to be turned into data structures that can be
+interpreted.
+
+*******************************************************************************/
+
 /*
-This is super simple, a helper enum and accessor methods, plus
-a stringify method `repr` for debugging.
+This is super simple, a helper enum and accessor methods, plus a stringify
+method `repr` for debugging.
 */
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub enum Literal {
-    // TODO: Object(),
     Boolean(bool),
     String(String),
-    Number(f64),
+    Number(LoxNumberLiteral),
     None,
 }
 
@@ -118,10 +211,86 @@ impl Literal {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum TokenType {
+    // Single-character tokens.
+    LeftParen,
+    RightParen,
+    LeftBrace,
+    RightBrace,
+    Comma,
+    Dot,
+    Minus,
+    Plus,
+    Semicolon,
+    Slash,
+    Star,
+
+    // One or two character tokens.
+    Bang,
+    BangEqual,
+    Equal,
+    EqualEqual,
+    Greater,
+    GreaterEqual,
+    Less,
+    LessEqual,
+
+    // Literals.
+    Identifier,
+    LoxString, // String is a Rust type
+    Number,
+
+    // Keywords.
+    And,
+    Class,
+    Else,
+    False,
+    Fun,
+    For,
+    If,
+    Nil,
+    Or,
+    Print,
+    Return,
+    Super,
+    This,
+    True,
+    Var,
+    While,
+
+    Eof,
+}
+
+#[derive(Debug, Clone)]
+pub struct Token {
+    token_type: TokenType,
+    lexeme: String,
+    literal: Literal,
+    line: LineNumber,
+}
+
+impl Token {
+    fn to_string(&self) -> String {
+        format!(
+            "Token(token_type={:?}, lexeme=\"{}\", literal={})",
+            self.token_type,
+            self.lexeme,
+            self.literal.repr(),
+        )
+    }
+}
+
+enum ScanResult {
+    Empty,
+    Error(LoxError),
+    Token(Token),
+}
+
 /*
-The first stage in the intepreter pipeline, transforms a string
-which could be multiple lines into a list of graphemes. The list
-of graphemes will go into the parser.
+The first stage in the intepreter pipeline, transforms a string which could
+be multiple lines into a list of graphemes. The list of graphemes will go
+into the parser.
 */
 pub struct Scanner {
     graphemes: Vec<String>,
@@ -145,14 +314,16 @@ impl Scanner {
         }
     }
 
-    // TODO: remove passing lox in here, make some shared error handler
-    pub fn scan_tokens(&mut self, lox: &mut Lox) -> Vec<Token> {
+    pub fn scan_tokens(&mut self, lox: &mut Lox) -> Result<Vec<Token>, LoxError> {
         let mut tokens = Vec::new();
         while !self.is_at_end() {
             self.start = self.next;
-            match self.scan_token(lox) {
-                Ok(token) => tokens.push(token),
-                Err(()) => (),
+            let result = self.scan_token(lox);
+
+            if let ScanResult::Token(token) = result {
+                tokens.push(token);
+            } else if let ScanResult::Error(error) = result {
+                return Err(error);
             }
         }
 
@@ -163,13 +334,13 @@ impl Scanner {
             lexeme: "".to_owned(),
         });
 
-        tokens
+        Ok(tokens)
     }
 
     // TODO: I don't like passing lox in, I'd rather find a better way to
-    // implement what Bob calls separation of the code that reports errors
-    // from the code that handles errors
-    fn scan_token(&mut self, lox: &mut Lox) -> Result<Token, ()> {
+    // implement what Bob calls separation of the code that reports errors from
+    // the code that handles errors
+    fn scan_token(&mut self, lox: &mut Lox) -> ScanResult {
         self.col += 1;
         let c = self.advance();
         // println!("Scanning token starting at c={}", c);
@@ -224,20 +395,19 @@ impl Scanner {
                         }
                     }
                     self.line += 1;
-                    return Err(()); // No token
+                    return ScanResult::Empty;
                 } else {
                     self.new_token(TokenType::Slash)
                 }
             }
-            " " => return Err(()),
-            "\r" => return Err(()),
-            "\t" => return Err(()),
+            " " => return ScanResult::Empty,
+            "\r" => return ScanResult::Empty,
+            "\t" => return ScanResult::Empty,
             "\n" => {
                 self.line += 1;
                 self.col = 1;
-                return Err(());
+                return ScanResult::Empty;
             }
-            // TODO: remove passing lox in here, make some shared error handler
             "\"" => self.string(lox),
             _ => {
                 // Borrow c again as immutable to avoid reference error
@@ -247,15 +417,17 @@ impl Scanner {
                 } else if self.is_alpha(&c) {
                     self.identifier(lox)
                 } else {
-                    let message = format!("Unexpected character '{}' at [col={}]", c, self.col);
-                    lox.scan_error(self.line, &message);
-                    return Err(());
+                    let message = format!("unexpected character '{}' at [col={}]", c, self.col);
+                    let err =
+                        lox.scan_error(self.line, LoxErrorType::UnexpectedCharacter, &message);
+                    // ScanResult::Error(err)
+                    return ScanResult::Empty;
                 }
             }
         };
 
         // println!("Scanned token={}", token.to_string());
-        Ok(token)
+        ScanResult::Token(token)
     }
 
     fn advance(&mut self) -> &str {
@@ -271,16 +443,18 @@ impl Scanner {
 
     /*
     Basically for both peek and peek_next, we're checking for what the next
-    or character after next contains. If we call `peek` during the match statement
-    of the scan_token (main block of scanning logic) then we're actually looking
-    at the next character, but if we call it before then, we're looking at the
-    character currently being scanned (about to be scanned).
+    or character after next contains. If we call `peek` during the match
+    statement of the scan_token (main block of scanning logic) then we're
+    actually looking at the next character, but if we call it before then,
+    we're looking at the character currently being scanned (about to be
+    scanned).
 
-    What this means is that both peek and peek_next can look into the future, and
-    can go over the length of the `graphemes` vector. If that happens, we'll panic
-    and quit the whole program. But wait, that's bad! So instead we just guard and
-    return `\0` as a way to pretend the rest of memory after the end of the vec
-    is all zeros, which as far as the interpreter is concerned, makes sense.
+    What this means is that both peek and peek_next can look into the future,
+    and can go over the length of the `graphemes` vector. If that happens,
+    we'll panic and quit the whole program. But wait, that's bad! So instead
+    we just guard and return `\0` as a way to pretend the rest of memory
+    after the end of the vec is all zeros, which as far as the interpreter is
+    concerned, makes sense.
     */
     fn peek(&self) -> &str {
         if self.next >= self.graphemes.len() {
@@ -337,7 +511,6 @@ impl Scanner {
         return self.is_digit(c) || self.is_alpha(c);
     }
 
-    // TODO: remove passing lox in here, make some shared error handler
     fn string(&mut self, lox: &mut Lox) -> Token {
         // println!("Scanning string starting at c={}{}", self.prev(), self.peek());
         loop {
@@ -356,11 +529,15 @@ impl Scanner {
         }
 
         // If we're at the end, but we've advanced and the last character is a
-        // quotation, that's actually okay. We're probably in the interactive mode
-        // and didn't have another character after the end of the string, i.e.
-        // > "a"
+        // quotation, that's actually okay. We're probably in the interactive
+        // mode and didn't have another character after the end of the string,
+        // i.e. > "a"
         if self.is_at_end() && !(self.prev() == "\"" && self.next > self.start) {
-            lox.scan_error(self.line, "Unterminated string");
+            lox.scan_error(
+                self.line,
+                LoxErrorType::UnterminatedString,
+                "unterminated string",
+            );
         }
 
         let mut lexeme = String::new();
@@ -371,7 +548,7 @@ impl Scanner {
         Token {
             token_type: TokenType::LoxString,
             line: self.line,
-            literal: Literal::String(lexeme.clone()), // TODO is this dumb?
+            literal: Literal::String(lexeme.clone()),
             lexeme: lexeme,
         }
     }
@@ -455,302 +632,34 @@ impl Scanner {
     }
 }
 
-#[derive(Debug, Clone, std::cmp::PartialEq)]
-pub enum TokenType {
-    // Single-character tokens.
-    LeftParen,
-    RightParen,
-    LeftBrace,
-    RightBrace,
-    Comma,
-    Dot,
-    Minus,
-    Plus,
-    Semicolon,
-    Slash,
-    Star,
+/*******************************************************************************
+********************************************************************************
+                                PARSER
+********************************************************************************
 
-    // One or two character tokens.
-    Bang,
-    BangEqual,
-    Equal,
-    EqualEqual,
-    Greater,
-    GreaterEqual,
-    Less,
-    LessEqual,
+This section contains the second logical division of interpreter logic. It
+receives a flat vector of tokens which we can then build into expressions and
+statement data structures which can be directly interpreted.
 
-    // Literals.
-    Identifier,
-    LoxString, // String is a Rust type
-    Number,
-
-    // Keywords.
-    And,
-    Class,
-    Else,
-    False,
-    Fun,
-    For,
-    If,
-    Nil,
-    Or,
-    Print,
-    Return,
-    Super,
-    This,
-    True,
-    Var,
-    While,
-
-    Eof,
-}
-
-#[derive(Clone)]
-pub struct Token {
-    token_type: TokenType,
-    lexeme: String,
-    literal: Literal,
-    line: LineNumber,
-}
-
-impl Token {
-    fn to_string(&self) -> String {
-        format!(
-            "Token(token_type={:?}, lexeme=\"{}\", literal={})",
-            self.token_type,
-            self.lexeme,
-            self.literal.repr(),
-        )
-    }
-}
-
-struct Parser {
-    tokens: Vec<Token>,
-    current: FileLocation,
-}
-
-impl Parser {
-    fn new(tokens: Vec<Token>) -> Parser {
-        Parser { current: 0, tokens }
-    }
-
-    fn parse(&mut self, lox: &mut Lox) -> Result<Expression, ()> {
-        match self.expression(lox) {
-            Ok(e) => Ok(e),
-            // Book does `return null` here and says we will revisit
-            // When we revisit we'll update this branch
-            Err(e) => Err(()),
-        }
-    }
-
-    fn synchronize(&mut self) -> () {
-        self.advance();
-
-        while !self.is_at_end() {
-            if self.previous().token_type == TokenType::Semicolon {
-                break;
-            }
-
-            let found = match self.peek().token_type {
-                TokenType::Class => true,
-                TokenType::Fun => true,
-                TokenType::Var => true,
-                TokenType::For => true,
-                TokenType::If => true,
-                TokenType::While => true,
-                TokenType::Print => true,
-                TokenType::Return => true,
-                _ => false,
-            };
-
-            if found {
-                break;
-            } else {
-                self.advance();
-            }
-        }
-    }
-
-    fn expression(&mut self, lox: &mut Lox) -> Result<Expression, ParseError> {
-        self.equality(lox)
-    }
-
-    fn equality(&mut self, lox: &mut Lox) -> Result<Expression, ParseError> {
-        let mut expr = self.comparison(lox)?;
-
-        while self.match_tokens(vec![TokenType::BangEqual, TokenType::EqualEqual]) {
-            let operator = self.previous();
-            let right = self.comparison(lox)?;
-            expr = Expression::binary(expr, operator, right);
-        }
-
-        Ok(expr)
-    }
-
-    fn comparison(&mut self, lox: &mut Lox) -> Result<Expression, ParseError> {
-        let mut expr = self.terminal(lox)?;
-
-        while self.match_tokens(vec![
-            TokenType::Greater,
-            TokenType::GreaterEqual,
-            TokenType::Less,
-            TokenType::LessEqual,
-        ]) {
-            let operator = self.previous();
-            let right = self.terminal(lox)?;
-            expr = Expression::binary(expr, operator, right);
-        }
-
-        Ok(expr)
-    }
-
-    fn terminal(&mut self, lox: &mut Lox) -> Result<Expression, ParseError> {
-        let mut expr = self.factor(lox)?;
-
-        while self.match_tokens(vec![TokenType::Minus, TokenType::Plus]) {
-            let operator = self.previous();
-            let right = self.factor(lox)?;
-            expr = Expression::binary(expr, operator, right);
-        }
-
-        Ok(expr)
-    }
-
-    fn factor(&mut self, lox: &mut Lox) -> Result<Expression, ParseError> {
-        let mut expr = self.unary(lox)?;
-
-        while self.match_tokens(vec![TokenType::Star, TokenType::Slash]) {
-            let operator = self.previous();
-            let right = self.unary(lox)?;
-            expr = Expression::binary(expr, operator, right);
-        }
-
-        Ok(expr)
-    }
-
-    fn unary(&mut self, lox: &mut Lox) -> Result<Expression, ParseError> {
-        if self.match_tokens(vec![TokenType::Bang, TokenType::Minus]) {
-            let operator = self.previous();
-            let right = self.unary(lox)?;
-            Ok(Expression::unary(operator, right))
-        } else {
-            self.primary(lox)
-        }
-    }
-
-    fn primary(&mut self, lox: &mut Lox) -> Result<Expression, ParseError> {
-        if self.match_token(TokenType::False) {
-            Ok(Expression::literal(Literal::Boolean(false)))
-        } else if self.match_token(TokenType::True) {
-            Ok(Expression::literal(Literal::Boolean(true)))
-        } else if self.match_tokens(vec![
-            TokenType::Nil,
-            TokenType::Number,
-            TokenType::LoxString,
-        ]) {
-            Ok(Expression::literal(self.previous().literal))
-        } else if self.match_token(TokenType::LeftParen) {
-            let expr = self.expression(lox)?;
-            self.consume(TokenType::RightParen, "Expect ')' after expression")?;
-            Ok(Expression::grouping(expr))
-        } else {
-            let cause = self.peek();
-            let message = "Expected expression";
-            lox.parse_error(cause.clone(), message);
-            Err(ParseError {
-                message: String::from(message),
-                cause,
-            })
-        }
-    }
-
-    fn consume(&mut self, token_type: TokenType, message: &str) -> Result<Token, ParseError> {
-        if self.check(token_type) {
-            Ok(self.advance())
-        } else {
-            Err(ParseError {
-                cause: self.peek(),
-                message: String::from(message),
-            })
-        }
-    }
-
-    fn match_tokens(&mut self, tokens: Vec<TokenType>) -> bool {
-        let mut tokens = tokens.into_iter();
-        while let Some(next) = tokens.next() {
-            if self.match_token(next) {
-                return true;
-            }
-        }
-
-        false
-    }
-
-    fn match_token(&mut self, token: TokenType) -> bool {
-        if self.check(token) {
-            self.advance();
-            true
-        } else {
-            false
-        }
-    }
-
-    fn check(&self, token_type: TokenType) -> bool {
-        if self.is_at_end() {
-            false
-        } else {
-            self.peek().token_type == token_type
-        }
-    }
-
-    fn advance(&mut self) -> Token {
-        if !self.is_at_end() {
-            self.current += 1;
-        }
-
-        self.previous()
-    }
-
-    fn previous(&self) -> Token {
-        // TODO: need an invariant that we will not call this until advancing at least once, would panic
-        self.tokens[self.current - 1].clone()
-    }
-
-    fn peek(&self) -> Token {
-        // TODO: is it an invariant that we will always stop advancing at the end?
-        self.tokens[self.current].clone()
-    }
-
-    fn is_at_end(&self) -> bool {
-        self.peek().token_type == TokenType::Eof
-    }
-}
-
-struct ParseError {
-    cause: Token,
-    message: String,
-}
+*******************************************************************************/
 
 /*
-This section of the code corresponds to the section of the
-book that uses metaprogramming and the visitor pattern to easily
-create Java classes to represent nested expressions. The thing
-is, in my opinion, Rust is usable enough for this kind of task
-that I feel fine creating this code by hand. I might revisit
-this using metaprogramming or macros later when I feel better
+This section of the code corresponds to the section of the book that uses
+metaprogramming and the visitor pattern to easily create Java classes to
+represent nested expressions. The thing is, in my opinion, Rust is usable
+enough for this kind of task that I feel fine creating this code by hand. I
+might revisit this using metaprogramming or macros later when I feel better
 about Rust 🙂
 
-The ultimate goal here is to show how you can implement N behaviors
-for each of M data types, but with Rust that's just `impl`.
+The ultimate goal here is to show how you can implement N behaviors for each
+of M data types, but with Rust that's just `impl`.
 
-So, for example, the book says to create an `AstPrinter` class
-which implements visitors for each type, binary/grouping/literal/
-unary, which each in turn produce a string. This is logically
-equivalent to `ExpressionPrinter` trait which each expression
-implements.
+So, for example, the book says to create an `AstPrinter` class which
+implements visitors for each type, binary/grouping/literal/ unary, which each
+in turn produce a string. This is logically equivalent to `ExpressionPrinter`
+trait which each expression implements.
 */
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub enum Expression {
     Binary(Box<Expression>, Token, Box<Expression>),
     Grouping(Box<Expression>),
@@ -794,6 +703,7 @@ impl Expression {
 
     fn apply_compare(
         self,
+        lox: &mut Lox,
         op: TokenType,
         left: LoxObject,
         right: LoxObject,
@@ -804,202 +714,277 @@ impl Expression {
                 TokenType::GreaterEqual => Ok(l >= r),
                 TokenType::Less => Ok(l < r),
                 TokenType::LessEqual => Ok(l <= r),
-                _ => Err(LoxError {
-                    cause: self,
-                    message: format!("unable to apply {:?} as a comparison operator", op),
-                    err_type: LoxErrorType::UnknownOperator,
-                }),
+                _ => Err(lox.runtime_error(
+                    self,
+                    LoxErrorType::UnknownOperator,
+                    &format!("unable to apply {:?} as a comparison operator", op),
+                )),
             };
             result.map(|b| LoxObject::Boolean(b))
         } else {
-            Err(LoxError {
-                cause: self,
-                // TODO: better messaging here
-                message: format!("cannot apply operation {:?} to non-numeric types", op),
-                err_type: LoxErrorType::TypeError,
-            })
+            Err(lox.runtime_error(
+                self,
+                LoxErrorType::TypeError,
+                &format!("cannot apply operation {:?} to non-numeric types", op),
+            ))
         }
     }
 }
 
+struct Parser {
+    tokens: Vec<Token>,
+    current: FileLocation,
+}
+
+impl Parser {
+    fn new(tokens: Vec<Token>) -> Parser {
+        Parser { current: 0, tokens }
+    }
+
+    fn parse(&mut self, lox: &mut Lox) -> Result<Expression, LoxError> {
+        match self.expression(lox) {
+            Ok(expr) => Ok(expr),
+            // Book does `return null` here and says we will revisit When we
+            // revisit we'll update this branch
+            Err(err) => Err(err),
+        }
+    }
+
+    fn synchronize(&mut self) -> () {
+        self.advance();
+
+        while !self.is_at_end() {
+            if self.previous().token_type == TokenType::Semicolon {
+                break;
+            }
+
+            let found = match self.peek().token_type {
+                TokenType::Class => true,
+                TokenType::Fun => true,
+                TokenType::Var => true,
+                TokenType::For => true,
+                TokenType::If => true,
+                TokenType::While => true,
+                TokenType::Print => true,
+                TokenType::Return => true,
+                _ => false,
+            };
+
+            if found {
+                break;
+            } else {
+                self.advance();
+            }
+        }
+    }
+
+    fn expression(&mut self, lox: &mut Lox) -> Result<Expression, LoxError> {
+        self.equality(lox)
+    }
+
+    fn equality(&mut self, lox: &mut Lox) -> Result<Expression, LoxError> {
+        let mut expr = self.comparison(lox)?;
+
+        while self.match_tokens(vec![TokenType::BangEqual, TokenType::EqualEqual]) {
+            let operator = self.previous();
+            let right = self.comparison(lox)?;
+            expr = Expression::binary(expr, operator, right);
+        }
+
+        Ok(expr)
+    }
+
+    fn comparison(&mut self, lox: &mut Lox) -> Result<Expression, LoxError> {
+        let mut expr = self.terminal(lox)?;
+
+        while self.match_tokens(vec![
+            TokenType::Greater,
+            TokenType::GreaterEqual,
+            TokenType::Less,
+            TokenType::LessEqual,
+        ]) {
+            let operator = self.previous();
+            let right = self.terminal(lox)?;
+            expr = Expression::binary(expr, operator, right);
+        }
+
+        Ok(expr)
+    }
+
+    fn terminal(&mut self, lox: &mut Lox) -> Result<Expression, LoxError> {
+        let mut expr = self.factor(lox)?;
+
+        while self.match_tokens(vec![TokenType::Minus, TokenType::Plus]) {
+            let operator = self.previous();
+            let right = self.factor(lox)?;
+            expr = Expression::binary(expr, operator, right);
+        }
+
+        Ok(expr)
+    }
+
+    fn factor(&mut self, lox: &mut Lox) -> Result<Expression, LoxError> {
+        let mut expr = self.unary(lox)?;
+
+        while self.match_tokens(vec![TokenType::Star, TokenType::Slash]) {
+            let operator = self.previous();
+            let right = self.unary(lox)?;
+            expr = Expression::binary(expr, operator, right);
+        }
+
+        Ok(expr)
+    }
+
+    fn unary(&mut self, lox: &mut Lox) -> Result<Expression, LoxError> {
+        if self.match_tokens(vec![TokenType::Bang, TokenType::Minus]) {
+            let operator = self.previous();
+            let right = self.unary(lox)?;
+            Ok(Expression::unary(operator, right))
+        } else {
+            self.primary(lox)
+        }
+    }
+
+    fn primary(&mut self, lox: &mut Lox) -> Result<Expression, LoxError> {
+        if self.match_token(TokenType::False) {
+            Ok(Expression::literal(Literal::Boolean(false)))
+        } else if self.match_token(TokenType::True) {
+            Ok(Expression::literal(Literal::Boolean(true)))
+        } else if self.match_tokens(vec![
+            TokenType::Nil,
+            TokenType::Number,
+            TokenType::LoxString,
+        ]) {
+            Ok(Expression::literal(self.previous().literal))
+        } else if self.match_token(TokenType::LeftParen) {
+            let expr = self.expression(lox)?;
+            self.consume(lox, TokenType::RightParen, "Expect ')' after expression")?;
+            Ok(Expression::grouping(expr))
+        } else {
+            let cause = self.peek();
+            let message = "expected expression";
+            Err(lox.parse_error(cause, LoxErrorType::ExpressionError, message))
+        }
+    }
+
+    fn consume(
+        &mut self,
+        lox: &mut Lox,
+        token_type: TokenType,
+        message: &str,
+    ) -> Result<Token, LoxError> {
+        if self.check(token_type) {
+            Ok(self.advance())
+        } else {
+            Err(lox.parse_error(self.peek(), LoxErrorType::IncompleteExpression, message))
+        }
+    }
+
+    fn match_tokens(&mut self, tokens: Vec<TokenType>) -> bool {
+        let mut tokens = tokens.into_iter();
+        while let Some(next) = tokens.next() {
+            if self.match_token(next) {
+                return true;
+            }
+        }
+
+        false
+    }
+
+    fn match_token(&mut self, token: TokenType) -> bool {
+        if self.check(token) {
+            self.advance();
+            true
+        } else {
+            false
+        }
+    }
+
+    fn check(&self, token_type: TokenType) -> bool {
+        if self.is_at_end() {
+            false
+        } else {
+            self.peek().token_type == token_type
+        }
+    }
+
+    fn advance(&mut self) -> Token {
+        if !self.is_at_end() {
+            self.current += 1;
+        }
+
+        self.previous()
+    }
+
+    fn previous(&self) -> Token {
+        // TODO: need an invariant that we will not call this until advancing at
+        // least once, would panic
+        self.tokens[self.current - 1].clone()
+    }
+
+    fn peek(&self) -> Token {
+        // TODO: is it an invariant that we will always stop advancing at the end?
+        self.tokens[self.current].clone()
+    }
+
+    fn is_at_end(&self) -> bool {
+        self.peek().token_type == TokenType::Eof
+    }
+}
+
+/*******************************************************************************
+********************************************************************************
+                                INTERPRETER
+********************************************************************************
+
+This is the final division of the interpreter, which does the actual
+interpreting of expressions. In the book this is done using a visitor pattern
+because the initial implementation is done in Java. However, since I've used
+Rust, some functional approaches make more sense, and so I've used the
+pattern the book describes as "too hard to maintain for large code bases,"
+and I just sort of am resolved to having to refactor in the future if I ever
+change that.
+
+It's not a huge deal since this is a side project, but in my opinion, this
+way of doing things is easier to understand for the Lox language, while the
+visitor pattern splits all the behavior necessary to the language up into
+different files and classes when it really ought to live next to the trait or
+struct (or in Java the class) where it is actually used.
+
+The interpreter's job is to produce a value for each expression.
+
+*******************************************************************************/
+
 trait AstPrinter {
-    fn print(&self) -> String;
+    fn to_string(&self) -> String;
 }
 
 /*
 The Interpreter consumes the expression completely because it pulls the
-components out to evaluate them. If you need to re-use the whole
-expression, you should clone it first.
+components out to evaluate them. If you need to re-use the whole expression,
+you should clone it first.
 */
 trait Interpreter {
-    fn interpret(self) -> Result<LoxObject, LoxError>;
-}
-
-impl AstPrinter for Expression {
-    fn print(&self) -> String {
-        match self {
-            Expression::Binary(l, t, r) => format!("({} {} {})", t.lexeme, l.print(), r.print()),
-            Expression::Grouping(e) => format!("{}", e.print()),
-            Expression::Literal(l) => l.repr(),
-            Expression::Unary(t, e) => format!("({} {})", t.lexeme, e.print()),
-        }
-    }
-}
-
-impl Interpreter for Expression {
-    fn interpret(self) -> Result<LoxObject, LoxError> {
-        match self.clone() {
-            Expression::Grouping(expr) => expr.interpret(),
-            Expression::Literal(lit) => match lit {
-                Literal::Boolean(b) => Ok(LoxObject::Boolean(b)),
-                Literal::String(s) => Ok(LoxObject::String(s)),
-                Literal::Number(n) => Ok(LoxObject::Number(n)),
-                Literal::None => Ok(LoxObject::Nil),
-            },
-            Expression::Unary(op, value) => {
-                let value = Expression::unbox(value);
-                let obj = value.clone().interpret()?;
-                match op.token_type {
-                    TokenType::Minus => {
-                        if let LoxObject::Number(n) = obj {
-                            Ok(LoxObject::Number(-n))
-                        } else {
-                            Err(LoxError {
-                                cause: self,
-                                message: format!(
-                                    "cannot negate `{}` — expected Number, found {}",
-                                    obj.print(),
-                                    obj.get_type()
-                                ),
-                                err_type: LoxErrorType::TypeError,
-                            })
-                        }
-                    }
-                    TokenType::Bang => {
-                        if Self::is_truthy(obj) {
-                            Ok(LoxObject::Boolean(false))
-                        } else {
-                            Ok(LoxObject::Boolean(true))
-                        }
-                    }
-                    _ => Err(LoxError {
-                        cause: self,
-                        message: format!("'{:?}'", op.token_type),
-                        err_type: LoxErrorType::UnknownOperator,
-                    }),
-                }
-            }
-            Expression::Binary(left, op, right) => {
-                let rval = Expression::unbox(right);
-                let lval = Expression::unbox(left);
-
-                let robj = rval.clone().interpret()?;
-                let lobj = lval.clone().interpret()?;
-
-                match op.token_type {
-                    TokenType::Minus => match (lobj, robj) {
-                        (LoxObject::Number(l), LoxObject::Number(r)) => {
-                            Ok(LoxObject::Number(l - r))
-                        }
-                        _ => Err(LoxError {
-                            cause: self,
-                            message: format!("cannot subtract non-numbers"),
-                            err_type: LoxErrorType::TypeError,
-                        }),
-                    },
-                    TokenType::Slash => match (lobj, robj) {
-                        // TODO: don't use pattern here, will cause error
-                        (LoxObject::Number(l), LoxObject::Number(0.0)) => Err(LoxError {
-                            cause: self,
-                            message: format!("divide by zero"),
-                            err_type: LoxErrorType::DivideByZeroError,
-                        }),
-                        (LoxObject::Number(l), LoxObject::Number(r)) => {
-                            Ok(LoxObject::Number(l / r))
-                        }
-                        _ => Err(LoxError {
-                            cause: self,
-                            message: format!("cannot divide non-numbers"),
-                            err_type: LoxErrorType::TypeError,
-                        }),
-                    },
-                    TokenType::Star => match (lobj, robj) {
-                        (LoxObject::Number(l), LoxObject::Number(r)) => {
-                            Ok(LoxObject::Number(l * r))
-                        }
-                        _ => Err(LoxError {
-                            cause: self,
-                            message: format!("cannot multiply non-numbers"),
-                            err_type: LoxErrorType::TypeError,
-                        }),
-                    },
-                    TokenType::Plus => match (lobj, robj) {
-                        (LoxObject::Number(l), LoxObject::Number(r)) => {
-                            Ok(LoxObject::Number(l + r))
-                        }
-                        (LoxObject::String(l), LoxObject::String(r)) => {
-                            Ok(LoxObject::String(l.clone() + &r))
-                        }
-                        _ => Err(LoxError {
-                            cause: self,
-                            // TODO: improve error reporting
-                            message: format!("addition is defined for numbers and strings"),
-                            err_type: LoxErrorType::TypeError,
-                        }),
-                    },
-                    TokenType::Greater
-                    | TokenType::GreaterEqual
-                    | TokenType::Less
-                    | TokenType::LessEqual => self.apply_compare(op.token_type, lobj, robj),
-                    TokenType::EqualEqual => Ok(LoxObject::Boolean(lobj == robj)),
-                    TokenType::BangEqual => Ok(LoxObject::Boolean(lobj != robj)),
-                    _ => panic!("unimplemented"),
-                }
-            }
-        }
-    }
-}
-
-#[derive(Debug)]
-enum LoxErrorType {
-    TypeError,
-    UnknownOperator,
-    DivideByZeroError,
-}
-
-// TOOD: improve error handling by making this a shared enum
-// also return lox errors from the lox error and runtime error
-// methods. The error returned will be the one passed up through
-// the Result return type/ ? operator
-struct LoxError {
-    cause: Expression,
-    message: String,
-    err_type: LoxErrorType,
-}
-
-impl LoxError {
-    fn to_string(&self) -> String {
-        format!("    ({:?}) --- {}", self.err_type, self.message)
-    }
+    fn interpret(self, lox: &mut Lox) -> Result<LoxObject, LoxError>;
 }
 
 #[derive(PartialEq)]
 enum LoxObject {
     Boolean(bool),
     String(String),
-    Number(f64),
+    Number(LoxNumberLiteral),
     Object(HashMap<String, Box<LoxObject>>),
     Nil,
 }
 
 impl LoxObject {
-    // TODO: change to to_string
-    fn print(&self) -> String {
+    fn to_string(&self) -> String {
         match self {
             LoxObject::Boolean(b) => format!("{}", b),
             LoxObject::String(s) => s.clone(),
             LoxObject::Number(n) => format!("{}", n),
-            LoxObject::Object(o) => String::from("<Object>"),
+            // TODO: maybe actually print objects
+            LoxObject::Object(_) => String::from("<Object>"),
             LoxObject::Nil => String::from("nil"),
         }
     }
@@ -1014,5 +999,133 @@ impl LoxObject {
         };
 
         String::from(s)
+    }
+}
+
+impl AstPrinter for Expression {
+    fn to_string(&self) -> String {
+        match self {
+            Expression::Binary(l, t, r) => {
+                format!("({} {} {})", t.lexeme, l.to_string(), r.to_string())
+            }
+            Expression::Grouping(e) => format!("{}", e.to_string()),
+            Expression::Literal(l) => l.repr(),
+            Expression::Unary(t, e) => format!("({} {})", t.lexeme, e.to_string()),
+        }
+    }
+}
+
+impl Interpreter for Expression {
+    fn interpret(self, lox: &mut Lox) -> Result<LoxObject, LoxError> {
+        match self.clone() {
+            Expression::Grouping(expr) => expr.interpret(lox),
+            Expression::Literal(lit) => match lit {
+                Literal::Boolean(b) => Ok(LoxObject::Boolean(b)),
+                Literal::String(s) => Ok(LoxObject::String(s)),
+                Literal::Number(n) => Ok(LoxObject::Number(n)),
+                Literal::None => Ok(LoxObject::Nil),
+            },
+            Expression::Unary(op, value) => {
+                let value = Expression::unbox(value);
+                let obj = value.clone().interpret(lox)?;
+                match op.token_type {
+                    TokenType::Minus => {
+                        if let LoxObject::Number(n) = obj {
+                            Ok(LoxObject::Number(-n))
+                        } else {
+                            Err(lox.runtime_error(
+                                self,
+                                LoxErrorType::TypeError,
+                                &format!(
+                                    "cannot negate `{}` — expected Number, found {}",
+                                    obj.to_string(),
+                                    obj.get_type()
+                                ),
+                            ))
+                        }
+                    }
+                    TokenType::Bang => {
+                        if Self::is_truthy(obj) {
+                            Ok(LoxObject::Boolean(false))
+                        } else {
+                            Ok(LoxObject::Boolean(true))
+                        }
+                    }
+                    _ => Err(lox.runtime_error(
+                        self,
+                        LoxErrorType::UnknownOperator,
+                        &format!("'{:?}'", op.token_type),
+                    )),
+                }
+            }
+            Expression::Binary(left, op, right) => {
+                let rval = Expression::unbox(right);
+                let lval = Expression::unbox(left);
+
+                let robj = rval.clone().interpret(lox)?;
+                let lobj = lval.clone().interpret(lox)?;
+
+                match op.token_type {
+                    TokenType::Minus => match (lobj, robj) {
+                        (LoxObject::Number(l), LoxObject::Number(r)) => {
+                            Ok(LoxObject::Number(l - r))
+                        }
+                        _ => Err(lox.runtime_error(
+                            self,
+                            LoxErrorType::TypeError,
+                            "cannot subtract non-numbers",
+                        )),
+                    },
+                    TokenType::Slash => match (lobj, robj) {
+                        (LoxObject::Number(l), LoxObject::Number(r)) => {
+                            if r == 0.0 {
+                                Err(lox.runtime_error(
+                                    self,
+                                    LoxErrorType::DivideByZeroError,
+                                    "divide by zero",
+                                ))
+                            } else {
+                                Ok(LoxObject::Number(l / r))
+                            }
+                        }
+                        _ => Err(lox.runtime_error(
+                            self,
+                            LoxErrorType::TypeError,
+                            "cannot divide non-numbers",
+                        )),
+                    },
+                    TokenType::Star => match (lobj, robj) {
+                        (LoxObject::Number(l), LoxObject::Number(r)) => {
+                            Ok(LoxObject::Number(l * r))
+                        }
+                        _ => Err(lox.runtime_error(
+                            self,
+                            LoxErrorType::TypeError,
+                            "cannot multiply non-numbers",
+                        )),
+                    },
+                    TokenType::Plus => match (lobj, robj) {
+                        (LoxObject::Number(l), LoxObject::Number(r)) => {
+                            Ok(LoxObject::Number(l + r))
+                        }
+                        (LoxObject::String(l), LoxObject::String(r)) => {
+                            Ok(LoxObject::String(l.clone() + &r))
+                        }
+                        _ => Err(lox.runtime_error(
+                            self,
+                            LoxErrorType::TypeError,
+                            "addition is defined for numbers and strings",
+                        )),
+                    },
+                    TokenType::Greater
+                    | TokenType::GreaterEqual
+                    | TokenType::Less
+                    | TokenType::LessEqual => self.apply_compare(lox, op.token_type, lobj, robj),
+                    TokenType::EqualEqual => Ok(LoxObject::Boolean(lobj == robj)),
+                    TokenType::BangEqual => Ok(LoxObject::Boolean(lobj != robj)),
+                    _ => panic!("unimplemented"),
+                }
+            }
+        }
     }
 }

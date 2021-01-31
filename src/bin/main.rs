@@ -31,8 +31,6 @@ fn main() -> Result<(), Box<dyn Error>> {
             std::process::exit(65);
         } else if lox.had_runtime_error {
             std::process::exit(70);
-        } else {
-            println!("Done!");
         }
     } else {
         println!("Getting input");
@@ -44,7 +42,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             lox.run(line?);
             lox.had_error = false;
         }
-        println!("Done!");
+        println!("Go Tigers!");
     }
 
     Ok(())

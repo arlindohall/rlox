@@ -1,8 +1,8 @@
 extern crate unicode_segmentation;
 
+use std::cmp::PartialEq;
 use std::collections::HashMap;
 use std::str::FromStr;
-use std::cmp::PartialEq;
 
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -166,9 +166,11 @@ impl Lox {
         let mut scanner = Scanner::new(snippet);
         let tokens = scanner.scan_tokens(self)?;
         let mut parser = Parser::new(tokens);
-        let expr = parser.parse(self)?;
-        let value = expr.interpret(self)?;
-        println!("{}", value.to_string());
+        let statements = parser.parse(self)?;
+
+        for statement in statements {
+            statement.interpret(self);
+        }
 
         Ok(())
     }
@@ -665,6 +667,7 @@ pub enum Expression {
     Grouping(Box<Expression>),
     Literal(Literal),
     Unary(Token, Box<Expression>),
+    // Variable(Token),
 }
 
 impl Expression {
@@ -731,6 +734,13 @@ impl Expression {
     }
 }
 
+enum Statement {
+    Print(Expression),
+    Expression(Expression),
+    Var(Token, Expression),
+    None,
+}
+
 struct Parser {
     tokens: Vec<Token>,
     current: FileLocation,
@@ -741,13 +751,13 @@ impl Parser {
         Parser { current: 0, tokens }
     }
 
-    fn parse(&mut self, lox: &mut Lox) -> Result<Expression, LoxError> {
-        match self.expression(lox) {
-            Ok(expr) => Ok(expr),
-            // Book does `return null` here and says we will revisit When we
-            // revisit we'll update this branch
-            Err(err) => Err(err),
+    fn parse(&mut self, lox: &mut Lox) -> Result<Vec<Statement>, LoxError> {
+        let mut statements = Vec::new();
+        while !self.is_at_end() {
+            statements.push(self.declaration(lox)?)
         }
+
+        Ok(statements)
     }
 
     fn synchronize(&mut self) -> () {
@@ -776,6 +786,49 @@ impl Parser {
                 self.advance();
             }
         }
+    }
+
+    fn declaration(&mut self, lox: &mut Lox) -> Result<Statement, LoxError> {
+        if self.match_token(TokenType::Var) {
+            let declr = self.var_declaration();
+            declr
+        } else {
+            self.statement(lox)
+        }
+    }
+
+    fn var_declaration(&self) -> Result<Statement, LoxError> {
+        todo!();
+    }
+
+    fn handle_declaration_err(&mut self, result: Result<Statement, LoxError>) -> Result<Statement, LoxError> {
+        match result {
+            Ok(stmt) => Ok(stmt),
+            Err(err) => {
+                self.synchronize();
+                Ok(Statement::None)
+            }
+        }
+    }
+
+    fn statement(&mut self, lox: &mut Lox) -> Result<Statement, LoxError> {
+        if self.match_token(TokenType::Print) {
+            return Ok(self.print_statement(lox)?);
+        }
+
+        Ok(self.expression_statement(lox)?)
+    }
+
+    fn print_statement(&mut self, lox: &mut Lox) -> Result<Statement, LoxError> {
+        let value = self.expression(lox)?;
+        self.consume(lox, TokenType::Semicolon, "expect ';' after value");
+        Ok(Statement::Print(value))
+    }
+
+    fn expression_statement(&mut self, lox: &mut Lox) -> Result<Statement, LoxError> {
+        let expr = self.expression(lox)?;
+        self.consume(lox, TokenType::Semicolon, "expect ';' after statement");
+        Ok(Statement::Expression(expr))
     }
 
     fn expression(&mut self, lox: &mut Lox) -> Result<Expression, LoxError> {
@@ -1123,9 +1176,24 @@ impl Interpreter for Expression {
                     | TokenType::LessEqual => self.apply_compare(lox, op.token_type, lobj, robj),
                     TokenType::EqualEqual => Ok(LoxObject::Boolean(lobj == robj)),
                     TokenType::BangEqual => Ok(LoxObject::Boolean(lobj != robj)),
-                    _ => panic!("unimplemented"),
+                    _ => panic!("unimplemented binary operator"),
                 }
             }
+        }
+    }
+}
+
+impl Interpreter for Statement {
+    fn interpret(self, lox: &mut Lox) -> Result<LoxObject, LoxError> {
+        match self {
+            Statement::Print(expr) => {
+                let obj = expr.interpret(lox)?;
+                println!("{}", obj.to_string());
+                Ok(obj)
+            }
+            Statement::Expression(expr) => expr.interpret(lox),
+            Statement::Var(token, expr) => todo!(),
+            _ => todo!(),
         }
     }
 }

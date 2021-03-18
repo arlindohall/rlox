@@ -1,3 +1,6 @@
+// Ignore while building
+#![ allow( dead_code, unused_imports, unused_variables, unused_must_use ) ]
+
 extern crate unicode_segmentation;
 
 use std::cmp::PartialEq;

@@ -793,11 +793,18 @@ impl Parser {
     }
 
     fn declaration(&mut self, lox: &mut Lox) -> Result<Statement, LoxError> {
-        if self.match_token(TokenType::Var) {
-            let declr = self.var_declaration(lox);
-            declr
+        let declr = if self.match_token(TokenType::Var) {
+            self.var_declaration(lox)
         } else {
             self.statement(lox)
+        };
+
+        match declr {
+            Ok(s) => Ok(s),
+            Err(e) => {
+                self.synchronize();
+                Err(e)
+            },
         }
     }
 

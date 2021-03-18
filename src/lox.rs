@@ -670,7 +670,7 @@ pub enum Expression {
     Grouping(Box<Expression>),
     Literal(Literal),
     Unary(Token, Box<Expression>),
-    // Variable(Token),
+    Variable(Token),
 }
 
 impl Expression {
@@ -696,6 +696,7 @@ impl Expression {
             Expression::Unary(token, expr) => Expression::Unary(token, expr),
             Expression::Literal(lit) => Expression::Literal(lit),
             Expression::Grouping(expr) => Expression::Grouping(expr),
+            Expression::Variable(var) => Expression::Variable(var),
         }
     }
 
@@ -920,6 +921,8 @@ impl Parser {
             TokenType::LoxString,
         ]) {
             Ok(Expression::literal(self.previous().literal))
+        } else if self.match_token(TokenType::Identifier) {
+            Ok(Expression::Variable(self.previous()))
         } else if self.match_token(TokenType::LeftParen) {
             let expr = self.expression(lox)?;
             self.consume(lox, TokenType::RightParen, "Expect ')' after expression")?;
@@ -1075,6 +1078,7 @@ impl AstPrinter for Expression {
             Expression::Grouping(e) => format!("{}", e.to_string()),
             Expression::Literal(l) => l.repr(),
             Expression::Unary(t, e) => format!("({} {})", t.lexeme, e.to_string()),
+            Expression::Variable(t) => format!("{}", t.lexeme)
         }
     }
 }
@@ -1189,7 +1193,8 @@ impl Interpreter for Expression {
                     TokenType::BangEqual => Ok(LoxObject::Boolean(lobj != robj)),
                     _ => panic!("unimplemented binary operator"),
                 }
-            }
+            },
+            Expression::Variable(_) => todo!(),
         }
     }
 }

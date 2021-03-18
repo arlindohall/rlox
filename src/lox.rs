@@ -737,7 +737,7 @@ impl Expression {
 enum Statement {
     Print(Expression),
     Expression(Expression),
-    Var(Token, Expression),
+    Var(Token, Option<Expression>),
     None,
 }
 
@@ -790,15 +790,23 @@ impl Parser {
 
     fn declaration(&mut self, lox: &mut Lox) -> Result<Statement, LoxError> {
         if self.match_token(TokenType::Var) {
-            let declr = self.var_declaration();
+            let declr = self.var_declaration(lox);
             declr
         } else {
             self.statement(lox)
         }
     }
 
-    fn var_declaration(&self) -> Result<Statement, LoxError> {
-        todo!();
+    fn var_declaration(&mut self, lox: &mut Lox) -> Result<Statement, LoxError> {
+        let name = self.consume(lox, TokenType::Identifier, "Expect variable name.")?;
+
+        let initializer = if self.match_token(TokenType::Equal) {
+            Some(self.expression(lox)?)
+        } else {
+            None
+        };
+
+        Ok(Statement::Var(name, initializer))
     }
 
     fn handle_declaration_err(&mut self, result: Result<Statement, LoxError>) -> Result<Statement, LoxError> {

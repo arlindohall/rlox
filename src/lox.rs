@@ -809,7 +809,7 @@ impl Parser {
     }
 
     fn var_declaration(&mut self, lox: &mut Lox) -> Result<Statement, LoxError> {
-        let name = self.consume(lox, TokenType::Identifier, "Expect variable name.")?;
+        let name = self.consume(lox, TokenType::Identifier, "expect variable name.")?;
 
         let initializer = if self.match_token(TokenType::Equal) {
             Some(self.expression(lox)?)
@@ -817,6 +817,7 @@ impl Parser {
             None
         };
 
+        self.consume(lox, TokenType::Semicolon, "expected semicolon after variable declaration");
         Ok(Statement::Var(name, initializer))
     }
 

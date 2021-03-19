@@ -6,7 +6,7 @@ use std::collections::HashMap;
 
 use crate::scanner::{TokenType, Token, Scanner, Literal};
 use crate::parser::{Parser, Expression};
-use crate::interpreter::{AstPrinter, Interpreter};
+use crate::interpreter::{AstPrinter, Interpreter, Environment};
 
 pub type LineNumber = u16; // 64K lines
 pub type FileLocation = usize; // 4G chars
@@ -170,8 +170,12 @@ impl Lox {
         let mut parser = Parser::new(tokens);
         let statements = parser.parse(self)?;
 
+        // TODO: maybe this should be structured so Lox doesn't need
+        // to know what an environment is?
+        let environment = &mut Environment::new();
+
         for statement in statements {
-            statement.interpret(self);
+            statement.interpret(self, environment);
         }
 
         Ok(())

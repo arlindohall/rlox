@@ -38,9 +38,15 @@ pub trait AstPrinter {
 The Interpreter consumes the expression completely because it pulls the
 components out to evaluate them. If you need to re-use the whole expression,
 you should clone it first.
+
+TODO: The environment in the book is a property of the Interpreter class, but
+we implement enterpreter for both expression and statement, and it looks like
+the environment is setting up to be not only mutable but movable, so I'm going
+to pass in a parameter for now until I've got more details. Clean this up
+later.
 */
 pub trait Interpreter {
-    fn interpret(self, lox: &mut Lox) -> Result<LoxObject, LoxError>;
+    fn interpret(self, lox: &mut Lox, environment: &mut Environment) -> Result<LoxObject, LoxError>;
 }
 
 impl AstPrinter for Expression {
@@ -57,13 +63,15 @@ impl AstPrinter for Expression {
     }
 }
 
+// TODO: AstPrinter for Statement
+
 impl Interpreter for Expression {
-    fn interpret(self, lox: &mut Lox) -> Result<LoxObject, LoxError> {
+    fn interpret(self, lox: &mut Lox, environment: &mut Environment) -> Result<LoxObject, LoxError> {
         match self.clone() {
-            Expression::Grouping(expr) => expr.interpret(lox),
+            Expression::Grouping(expr) => expr.interpret(lox, environment),
             Expression::Literal(obj) => Ok(obj),
             Expression::Unary(op, value) => {
-                let obj = value.clone().interpret(lox)?;
+                let obj = value.clone().interpret(lox, environment)?;
                 match op.token_type {
                     TokenType::Minus => {
                         if let LoxObject::Number(n) = obj {
@@ -95,8 +103,8 @@ impl Interpreter for Expression {
                 }
             }
             Expression::Binary(left, op, right) => {
-                let robj = right.clone().interpret(lox)?;
-                let lobj = left.clone().interpret(lox)?;
+                let robj = right.clone().interpret(lox, environment)?;
+                let lobj = left.clone().interpret(lox, environment)?;
 
                 match op.token_type {
                     TokenType::Minus => match (lobj, robj) {
@@ -159,33 +167,42 @@ impl Interpreter for Expression {
                     _ => panic!("unimplemented binary operator"),
                 }
             },
-            Expression::Variable(_) => todo!(),
+            Expression::Variable(token) => {
+                Ok(environment.get(&token).clone())
+            }
         }
     }
 }
 
 impl Interpreter for Statement {
-    fn interpret(self, lox: &mut Lox) -> Result<LoxObject, LoxError> {
+    fn interpret(self, lox: &mut Lox, environment: &mut Environment) -> Result<LoxObject, LoxError> {
         match self {
             Statement::Print(expr) => {
-                let obj = expr.interpret(lox)?;
+                let obj = expr.interpret(lox, environment)?;
                 println!("{}", obj.to_string());
                 Ok(obj)
             }
-            Statement::Expression(expr) => expr.interpret(lox),
-            Statement::Var(token, expr) => todo!(),
+            Statement::Expression(expr) => expr.interpret(lox, environment),
+            Statement::Var(token, expr) => {
+                let value = match expr {
+                    Some(expr) => expr.interpret(lox, environment),
+                    None => Ok(LoxObject::Nil),
+                }?;
+                environment.define(token.lexeme, value);
+                Ok(LoxObject::Nil)
+            }
             _ => todo!(),
         }
     }
 }
 
-struct Environment {
+pub struct Environment {
     values: HashMap<String, LoxObject>,
 }
 
 impl Environment {
 
-    fn new() -> Environment {
+    pub fn new() -> Environment {
         Environment {
             values: HashMap::new(),
         }

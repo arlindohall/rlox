@@ -10,7 +10,7 @@ use crate::interpreter::{AstPrinter, Interpreter};
 
 pub type LineNumber = u16; // 64K lines
 pub type FileLocation = usize; // 4G chars
-pub type LoxNumberLiteral = f64; // Numbers are floats, can be improved
+pub type LoxNumber = f64; // Numbers are floats, can be improved
 
 #[derive(Debug)]
 pub enum LoxError {

@@ -3,7 +3,7 @@
 
 use std::collections::HashMap;
 
-use crate::lox::{Lox, LoxError, LoxErrorType, LoxNumberLiteral};
+use crate::lox::{Lox, LoxError, LoxErrorType, LoxNumber};
 use crate::scanner::{TokenType, Token, Literal};
 use crate::parser::{Expression, Statement};
 
@@ -47,7 +47,7 @@ pub trait Interpreter {
 pub enum LoxObject {
     Boolean(bool),
     String(String),
-    Number(LoxNumberLiteral),
+    Number(LoxNumber),
     Object(HashMap<String, Box<LoxObject>>),
     Nil,
 }

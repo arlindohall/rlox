@@ -7,7 +7,7 @@ use std::str::FromStr;
 
 use unicode_segmentation::UnicodeSegmentation;
 
-use crate::lox::{Lox, LoxErrorType, LoxNumberLiteral, LineNumber, LoxError, FileLocation};
+use crate::lox::{Lox, LoxErrorType, LoxNumber, LineNumber, LoxError, FileLocation};
 
 /*******************************************************************************
 ********************************************************************************
@@ -31,7 +31,7 @@ method `repr` for debugging.
 pub enum Literal {
     Boolean(bool),
     String(String),
-    Number(LoxNumberLiteral),
+    Number(LoxNumber),
     None,
 }
 

@@ -42,15 +42,6 @@ pub enum Expression {
     Variable(Token),
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum LoxObject {
-    Boolean(bool),
-    String(String),
-    Number(LoxNumber),
-    Object(HashMap<String, Box<LoxObject>>),
-    Nil,
-}
-
 impl Expression {
     fn binary(l: Expression, t: Token, r: Expression) -> Expression {
         Expression::Binary(Box::new(l), t, Box::new(r))
@@ -104,6 +95,14 @@ impl Expression {
             ))
         }
     }
+}
+#[derive(Debug, Clone, PartialEq)]
+pub enum LoxObject {
+    Boolean(bool),
+    String(String),
+    Number(LoxNumber),
+    Object(HashMap<String, Box<LoxObject>>),
+    Nil,
 }
 
 impl LoxObject {

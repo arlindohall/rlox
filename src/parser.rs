@@ -68,17 +68,6 @@ impl Expression {
         Expression::Unary(t, Box::new(e))
     }
 
-    // TODO: This is getting to be really messy, I need to use lifetimes instead I think?
-    pub fn unbox(expr: Box<Expression>) -> Expression {
-        match *expr {
-            Expression::Binary(left, token, right) => Expression::Binary(left, token, right),
-            Expression::Unary(token, expr) => Expression::Unary(token, expr),
-            Expression::Literal(lit) => Expression::Literal(lit),
-            Expression::Grouping(expr) => Expression::Grouping(expr),
-            Expression::Variable(var) => Expression::Variable(var),
-        }
-    }
-
     pub fn is_truthy(obj: LoxObject) -> bool {
         match obj {
             LoxObject::Nil => false,

@@ -63,7 +63,6 @@ impl Interpreter for Expression {
             Expression::Grouping(expr) => expr.interpret(lox),
             Expression::Literal(obj) => Ok(obj),
             Expression::Unary(op, value) => {
-                let value = Expression::unbox(value);
                 let obj = value.clone().interpret(lox)?;
                 match op.token_type {
                     TokenType::Minus => {
@@ -96,11 +95,8 @@ impl Interpreter for Expression {
                 }
             }
             Expression::Binary(left, op, right) => {
-                let rval = Expression::unbox(right);
-                let lval = Expression::unbox(left);
-
-                let robj = rval.clone().interpret(lox)?;
-                let lobj = lval.clone().interpret(lox)?;
+                let robj = right.clone().interpret(lox)?;
+                let lobj = left.clone().interpret(lox)?;
 
                 match op.token_type {
                     TokenType::Minus => match (lobj, robj) {

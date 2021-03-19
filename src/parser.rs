@@ -1,9 +1,10 @@
 // Ignore while building
 #![ allow( dead_code, unused_imports, unused_variables, unused_must_use ) ]
 
-use crate::lox::{Lox, LoxErrorType, LoxError, FileLocation};
+use std::collections::HashMap;
+
+use crate::lox::{Lox, LoxErrorType, LoxError, FileLocation, LoxNumber};
 use crate::scanner::{TokenType, Token, Literal};
-use crate::interpreter::{LoxObject};
 
 /*******************************************************************************
 ********************************************************************************
@@ -36,9 +37,18 @@ trait which each expression implements.
 pub enum Expression {
     Binary(Box<Expression>, Token, Box<Expression>),
     Grouping(Box<Expression>),
-    Literal(Literal),
+    Literal(LoxObject),
     Unary(Token, Box<Expression>),
     Variable(Token),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum LoxObject {
+    Boolean(bool),
+    String(String),
+    Number(LoxNumber),
+    Object(HashMap<String, Box<LoxObject>>),
+    Nil,
 }
 
 impl Expression {
@@ -50,7 +60,7 @@ impl Expression {
         Expression::Grouping(Box::new(e))
     }
 
-    fn literal(l: Literal) -> Expression {
+    fn literal(l: LoxObject) -> Expression {
         Expression::Literal(l)
     }
 
@@ -104,6 +114,31 @@ impl Expression {
                 &format!("cannot apply operation {:?} to non-numeric types", op),
             ))
         }
+    }
+}
+
+impl LoxObject {
+    pub fn to_string(&self) -> String {
+        match self {
+            LoxObject::Boolean(b) => format!("{}", b),
+            LoxObject::String(s) => s.clone(),
+            LoxObject::Number(n) => format!("{}", n),
+            // TODO: maybe actually print objects
+            LoxObject::Object(_) => String::from("<Object>"),
+            LoxObject::Nil => String::from("nil"),
+        }
+    }
+
+    pub fn get_type(&self) -> String {
+        let s = match self {
+            LoxObject::Boolean(_) => "Boolean",
+            LoxObject::String(_) => "String",
+            LoxObject::Number(_) => "Number",
+            LoxObject::Object(_) => "Object",
+            LoxObject::Nil => "Nil",
+        };
+
+        String::from(s)
     }
 }
 
@@ -289,15 +324,15 @@ impl Parser {
 
     fn primary(&mut self, lox: &mut Lox) -> Result<Expression, LoxError> {
         if self.match_token(TokenType::False) {
-            Ok(Expression::literal(Literal::Boolean(false)))
+            Ok(Expression::literal(LoxObject::Boolean(false)))
         } else if self.match_token(TokenType::True) {
-            Ok(Expression::literal(Literal::Boolean(true)))
-        } else if self.match_tokens(vec![
-            TokenType::Nil,
-            TokenType::Number,
-            TokenType::LoxString,
-        ]) {
-            Ok(Expression::literal(self.previous().literal))
+            Ok(Expression::literal(LoxObject::Boolean(true)))
+        } else if self.match_token(TokenType::Nil) {
+            Ok(Expression::literal(LoxObject::Nil))
+        } else if self.match_token(TokenType::Number) {
+            Ok(Expression::literal(LoxObject::Number(self.previous().literal.get_number().unwrap())))
+        } else if self.match_token(TokenType::LoxString) {
+            Ok(Expression::literal(LoxObject::String(self.previous().literal.get_string().unwrap())))
         } else if self.match_token(TokenType::Identifier) {
             Ok(Expression::Variable(self.previous()))
         } else if self.match_token(TokenType::LeftParen) {

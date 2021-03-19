@@ -4,8 +4,8 @@
 use std::collections::HashMap;
 
 use crate::lox::{Lox, LoxError, LoxErrorType, LoxNumber};
-use crate::scanner::{TokenType, Token, Literal};
-use crate::parser::{Expression, Statement};
+use crate::scanner::{TokenType, Token};
+use crate::parser::{Expression, Statement, LoxObject};
 
 /*******************************************************************************
 ********************************************************************************
@@ -43,40 +43,6 @@ pub trait Interpreter {
     fn interpret(self, lox: &mut Lox) -> Result<LoxObject, LoxError>;
 }
 
-#[derive(PartialEq)]
-pub enum LoxObject {
-    Boolean(bool),
-    String(String),
-    Number(LoxNumber),
-    Object(HashMap<String, Box<LoxObject>>),
-    Nil,
-}
-
-impl LoxObject {
-    fn to_string(&self) -> String {
-        match self {
-            LoxObject::Boolean(b) => format!("{}", b),
-            LoxObject::String(s) => s.clone(),
-            LoxObject::Number(n) => format!("{}", n),
-            // TODO: maybe actually print objects
-            LoxObject::Object(_) => String::from("<Object>"),
-            LoxObject::Nil => String::from("nil"),
-        }
-    }
-
-    fn get_type(&self) -> String {
-        let s = match self {
-            LoxObject::Boolean(_) => "Boolean",
-            LoxObject::String(_) => "String",
-            LoxObject::Number(_) => "Number",
-            LoxObject::Object(_) => "Object",
-            LoxObject::Nil => "Nil",
-        };
-
-        String::from(s)
-    }
-}
-
 impl AstPrinter for Expression {
     fn to_string(&self) -> String {
         match self {
@@ -84,7 +50,7 @@ impl AstPrinter for Expression {
                 format!("({} {} {})", t.lexeme, l.to_string(), r.to_string())
             }
             Expression::Grouping(e) => format!("{}", e.to_string()),
-            Expression::Literal(l) => l.repr(),
+            Expression::Literal(l) => l.to_string(),
             Expression::Unary(t, e) => format!("({} {})", t.lexeme, e.to_string()),
             Expression::Variable(t) => format!("{}", t.lexeme)
         }
@@ -95,12 +61,7 @@ impl Interpreter for Expression {
     fn interpret(self, lox: &mut Lox) -> Result<LoxObject, LoxError> {
         match self.clone() {
             Expression::Grouping(expr) => expr.interpret(lox),
-            Expression::Literal(lit) => match lit {
-                Literal::Boolean(b) => Ok(LoxObject::Boolean(b)),
-                Literal::String(s) => Ok(LoxObject::String(s)),
-                Literal::Number(n) => Ok(LoxObject::Number(n)),
-                Literal::None => Ok(LoxObject::Nil),
-            },
+            Expression::Literal(obj) => Ok(obj),
             Expression::Unary(op, value) => {
                 let value = Expression::unbox(value);
                 let obj = value.clone().interpret(lox)?;

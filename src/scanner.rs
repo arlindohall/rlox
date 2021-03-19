@@ -44,6 +44,22 @@ impl Literal {
             Literal::None => format!("None"),
         }
     }
+
+    pub fn get_string(self) -> Option<String> {
+        if let Literal::String(s) = self {
+            Some(s)
+        } else {
+            None
+        }
+    }
+
+    pub fn get_number(self) -> Option<LoxNumber> {
+        if let Literal::Number(n) = self {
+            Some(n)
+        } else {
+            None
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]

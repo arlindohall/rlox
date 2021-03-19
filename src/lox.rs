@@ -1221,3 +1221,38 @@ impl Interpreter for Statement {
         }
     }
 }
+
+struct Environment {
+    values: HashMap<String, LoxObject>,
+}
+
+impl Environment {
+
+    fn new() -> Environment {
+        Environment {
+            values: HashMap::new(),
+        }
+    }
+
+    fn define(&mut self, name: String, value: LoxObject) {
+        self.values.insert(name, value);
+    }
+
+    /*
+     * The book throws an error when a value doesn't exist, but
+     * this is (1) more similar to Lua which I enjoy and (2)
+     * something that I feel more languages should have, especially
+     * dyanamic languages.
+     *
+     * One result of this decision to part from Lox's definition in
+     * the text is that we could, like Lua, delete values any time
+     * their name is set to `Nil`
+     */
+    fn get<'a, 'b>(&'a self, name: &'b Token) -> &'a LoxObject {
+        if let Some(value) = self.values.get(&name.lexeme) {
+            value
+        } else {
+            &LoxObject::Nil
+        }
+    }
+}

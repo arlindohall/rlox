@@ -3,8 +3,8 @@
 
 use std::collections::HashMap;
 
-use crate::lox::{Lox, LoxErrorType, LoxError, FileLocation, LoxNumber};
-use crate::scanner::{TokenType, Token, Literal};
+use crate::lox::{FileLocation, Lox, LoxError, LoxErrorType, LoxNumber};
+use crate::scanner::{Literal, Token, TokenType};
 
 /*******************************************************************************
 ********************************************************************************
@@ -202,7 +202,7 @@ impl Parser {
             Err(e) => {
                 self.synchronize();
                 Err(e)
-            },
+            }
         }
     }
 
@@ -215,11 +215,18 @@ impl Parser {
             None
         };
 
-        self.consume(lox, TokenType::Semicolon, "expected semicolon after variable declaration");
+        self.consume(
+            lox,
+            TokenType::Semicolon,
+            "expected semicolon after variable declaration",
+        );
         Ok(Statement::Var(name, initializer))
     }
 
-    fn handle_declaration_err(&mut self, result: Result<Statement, LoxError>) -> Result<Statement, LoxError> {
+    fn handle_declaration_err(
+        &mut self,
+        result: Result<Statement, LoxError>,
+    ) -> Result<Statement, LoxError> {
         match result {
             Ok(stmt) => Ok(stmt),
             Err(err) => {
@@ -267,7 +274,11 @@ impl Parser {
                 return Ok(Expression::assignment(token, value));
             } else {
                 // If it's not valid, report and continue
-                lox.runtime_error(value, LoxErrorType::AssignmentError, "invalid assignment target");
+                lox.runtime_error(
+                    value,
+                    LoxErrorType::AssignmentError,
+                    "invalid assignment target",
+                );
             }
         }
 
@@ -347,9 +358,13 @@ impl Parser {
         } else if self.match_token(TokenType::Nil) {
             Ok(Expression::literal(LoxObject::Nil))
         } else if self.match_token(TokenType::Number) {
-            Ok(Expression::literal(LoxObject::Number(self.previous().literal.get_number().unwrap())))
+            Ok(Expression::literal(LoxObject::Number(
+                self.previous().literal.get_number().unwrap(),
+            )))
         } else if self.match_token(TokenType::LoxString) {
-            Ok(Expression::literal(LoxObject::String(self.previous().literal.get_string().unwrap())))
+            Ok(Expression::literal(LoxObject::String(
+                self.previous().literal.get_string().unwrap(),
+            )))
         } else if self.match_token(TokenType::Identifier) {
             Ok(Expression::Variable(self.previous()))
         } else if self.match_token(TokenType::LeftParen) {

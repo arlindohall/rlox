@@ -7,7 +7,7 @@ use std::str::FromStr;
 
 use unicode_segmentation::UnicodeSegmentation;
 
-use crate::lox::{Lox, LoxErrorType, LoxNumber, LineNumber, LoxError, FileLocation};
+use crate::lox::{FileLocation, LineNumber, Lox, LoxError, LoxErrorType, LoxNumber};
 
 /*******************************************************************************
 ********************************************************************************

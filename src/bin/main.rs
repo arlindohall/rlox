@@ -1,5 +1,5 @@
 // Ignore while building
-#![ allow( dead_code, unused_imports, unused_variables, unused_must_use ) ]
+#![allow(dead_code, unused_imports, unused_variables, unused_must_use)]
 
 use std::error::Error;
 use std::fs::File;

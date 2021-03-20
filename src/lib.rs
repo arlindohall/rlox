@@ -1,4 +1,4 @@
-pub mod lox;
-mod scanner;
-mod parser;
 mod interpreter;
+pub mod lox;
+mod parser;
+mod scanner;

@@ -4,8 +4,8 @@
 use std::collections::HashMap;
 
 use crate::lox::{Lox, LoxError, LoxErrorType, LoxNumber};
-use crate::scanner::{TokenType, Token};
-use crate::parser::{Expression, Statement, LoxObject};
+use crate::parser::{Expression, LoxObject, Statement};
+use crate::scanner::{Token, TokenType};
 
 /*******************************************************************************
 ********************************************************************************
@@ -46,22 +46,21 @@ to pass in a parameter for now until I've got more details. Clean this up
 later.
 */
 pub trait Interpreter {
-    fn interpret(self, lox: &mut Lox, environment: &mut Environment) -> Result<LoxObject, LoxError>;
+    fn interpret(self, lox: &mut Lox, environment: &mut Environment)
+        -> Result<LoxObject, LoxError>;
 }
 
 impl AstPrinter for Expression {
     fn to_string(&self) -> String {
         match self {
-            Expression::Assignment(n, v) => {
-                format!("(define {} {})", n.lexeme, v.to_string())
-            }
+            Expression::Assignment(n, v) => format!("(define {} {})", n.lexeme, v.to_string()),
             Expression::Binary(l, t, r) => {
                 format!("({} {} {})", t.lexeme, l.to_string(), r.to_string())
             }
             Expression::Grouping(e) => format!("{}", e.to_string()),
             Expression::Literal(l) => l.to_string(),
             Expression::Unary(t, e) => format!("({} {})", t.lexeme, e.to_string()),
-            Expression::Variable(t) => format!("{}", t.lexeme)
+            Expression::Variable(t) => format!("{}", t.lexeme),
         }
     }
 }
@@ -69,7 +68,11 @@ impl AstPrinter for Expression {
 // TODO: AstPrinter for Statement
 
 impl Interpreter for Expression {
-    fn interpret(self, lox: &mut Lox, environment: &mut Environment) -> Result<LoxObject, LoxError> {
+    fn interpret(
+        self,
+        lox: &mut Lox,
+        environment: &mut Environment,
+    ) -> Result<LoxObject, LoxError> {
         match self.clone() {
             Expression::Grouping(expr) => expr.interpret(lox, environment),
             Expression::Literal(obj) => Ok(obj),
@@ -169,19 +172,19 @@ impl Interpreter for Expression {
                     TokenType::BangEqual => Ok(LoxObject::Boolean(lobj != robj)),
                     _ => panic!("unimplemented binary operator"),
                 }
-            },
-            Expression::Variable(token) => {
-                Ok(environment.get(&token).clone())
-            },
-            Expression::Assignment(token, value) => {
-                todo!()
             }
+            Expression::Variable(token) => Ok(environment.get(&token).clone()),
+            Expression::Assignment(token, value) => todo!(),
         }
     }
 }
 
 impl Interpreter for Statement {
-    fn interpret(self, lox: &mut Lox, environment: &mut Environment) -> Result<LoxObject, LoxError> {
+    fn interpret(
+        self,
+        lox: &mut Lox,
+        environment: &mut Environment,
+    ) -> Result<LoxObject, LoxError> {
         match self {
             Statement::Print(expr) => {
                 let obj = expr.interpret(lox, environment)?;
@@ -207,7 +210,6 @@ pub struct Environment {
 }
 
 impl Environment {
-
     pub fn new() -> Environment {
         Environment {
             values: HashMap::new(),

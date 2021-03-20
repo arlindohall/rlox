@@ -4,9 +4,9 @@
 use std::cmp::PartialEq;
 use std::collections::HashMap;
 
-use crate::scanner::{TokenType, Token, Scanner, Literal};
-use crate::parser::{Parser, Expression};
-use crate::interpreter::{AstPrinter, Interpreter, Environment};
+use crate::interpreter::{AstPrinter, Environment, Interpreter};
+use crate::parser::{Expression, Parser};
+use crate::scanner::{Literal, Scanner, Token, TokenType};
 
 pub type LineNumber = u16; // 64K lines
 pub type FileLocation = usize; // 4G chars

@@ -52,6 +52,9 @@ pub trait Interpreter {
 impl AstPrinter for Expression {
     fn to_string(&self) -> String {
         match self {
+            Expression::Assignment(n, v) => {
+                format!("(define {} {})", n.lexeme, v.to_string())
+            }
             Expression::Binary(l, t, r) => {
                 format!("({} {} {})", t.lexeme, l.to_string(), r.to_string())
             }
@@ -169,6 +172,9 @@ impl Interpreter for Expression {
             },
             Expression::Variable(token) => {
                 Ok(environment.get(&token).clone())
+            },
+            Expression::Assignment(token, value) => {
+                todo!()
             }
         }
     }

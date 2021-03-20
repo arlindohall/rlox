@@ -33,8 +33,10 @@ implements visitors for each type, binary/grouping/literal/ unary, which each
 in turn produce a string. This is logically equivalent to `ExpressionPrinter`
 trait which each expression implements.
 */
+// TODO make these struct-style enums since I already wrote wrapper methods
 #[derive(Debug, Clone)]
 pub enum Expression {
+    Assignment(Token, Box<Expression>),
     Binary(Box<Expression>, Token, Box<Expression>),
     Grouping(Box<Expression>),
     Literal(LoxObject),
@@ -43,6 +45,10 @@ pub enum Expression {
 }
 
 impl Expression {
+    fn assignment(name: Token, value: Expression) -> Expression {
+        Expression::Assignment(name, Box::new(value))
+    }
+
     fn binary(l: Expression, t: Token, r: Expression) -> Expression {
         Expression::Binary(Box::new(l), t, Box::new(r))
     }
@@ -244,7 +250,30 @@ impl Parser {
     }
 
     fn expression(&mut self, lox: &mut Lox) -> Result<Expression, LoxError> {
-        self.equality(lox)
+        self.assignment(lox)
+    }
+
+    fn assignment(&mut self, lox: &mut Lox) -> Result<Expression, LoxError> {
+        let expr = self.equality(lox);
+
+        // If this is an assignment, parse the RHS as a normal expression
+        if self.match_token(TokenType::Equal) {
+            let equals = self.previous();
+            let value = self.assignment(lox)?;
+
+            // If the left hand side is a valid assignment target, make the assignment
+            // According to the book, we'll revisit this
+            if let Ok(Expression::Variable(token)) = expr {
+                return Ok(Expression::assignment(token, value));
+            } else {
+                // If it's not valid, report and continue
+                lox.runtime_error(value, LoxErrorType::AssignmentError, "invalid assignment target");
+            }
+        }
+
+        // If it turned out not to be an assignment or was invalid, return the
+        // LHS as an expression only
+        expr
     }
 
     fn equality(&mut self, lox: &mut Lox) -> Result<Expression, LoxError> {

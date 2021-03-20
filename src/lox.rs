@@ -61,6 +61,7 @@ pub enum LoxErrorType {
     TypeError,
     UnknownOperator,
     DivideByZeroError,
+    AssignmentError,
 }
 
 pub struct Lox {

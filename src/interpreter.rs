@@ -220,7 +220,7 @@ impl Interpreter for Expression {
 
                 if op.token_type == TokenType::Or && Self::is_truthy(left.clone()) {
                     Ok(left)
-                } else if !Self::is_truthy(left.clone()) {
+                } else if op.token_type == TokenType::And && !Self::is_truthy(left.clone()) {
                     Ok(left)
                 } else {
                     r.interpret(lox, environment)

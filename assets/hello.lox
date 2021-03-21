@@ -3,6 +3,11 @@ print message;
 
 var number = 10.1;
 
+if (number > 0) {
+    print "First branch";
+    print number;
+}
+
 if (number > 12.3 or number < 11) {
     print number;
 }

@@ -184,11 +184,17 @@ impl Lox {
 
         for statement in statements {
             if TRACE {
-                println!(">>> Environment before statement env={}", environment.to_string());
+                println!(
+                    ">>> Environment before statement env={}",
+                    environment.to_string()
+                );
             }
             statement.interpret(self, environment);
             if TRACE {
-                println!(">>> Environment after statement env={}", environment.to_string());
+                println!(
+                    ">>> Environment after statement env={}",
+                    environment.to_string()
+                );
             }
         }
 

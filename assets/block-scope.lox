@@ -17,3 +17,12 @@ var c = "global c";
 print a;
 print b;
 print c;
+
+// Examples to prove chained assignment works
+{
+  var d = c = "block d";
+  print c;
+  print d;
+}
+
+print c;

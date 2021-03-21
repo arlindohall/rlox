@@ -216,7 +216,15 @@ impl Interpreter for Expression {
                 Ok(result)
             }
             Expression::Logical(l, op, r) => {
-                todo!()
+                let left = l.interpret(lox, environment)?;
+
+                if op.token_type == TokenType::Or && Self::is_truthy(left.clone()) {
+                    Ok(left)
+                } else if !Self::is_truthy(left.clone()) {
+                    Ok(left)
+                } else {
+                    r.interpret(lox, environment)
+                }
             }
         }
     }

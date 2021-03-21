@@ -190,14 +190,14 @@ impl Interpreter for Expression {
             Expression::Variable(token) => Ok(environment.get(lox, self, token)?.clone()),
             Expression::Assignment(name, value) => {
                 // TODO: This clone could be super expensive, if the whole program is one assignment
-                if crate::lox::TRACE {
-                    println!(">>> Modifying environment={}", environment.to_string());
-                }
+                crate::lox::trace(
+                    format!(">>> Modifying environment={}", environment.to_string())
+                );
                 let result = value.clone().interpret(lox, environment)?;
                 environment.assign(lox, *value, name, result.clone());
-                if crate::lox::TRACE {
-                    println!(">>> Done modifying environment={}", environment.to_string());
-                }
+                crate::lox::trace(
+                    format!(">>> Done modifying environment={}", environment.to_string())
+                );
 
                 Ok(result)
             },
@@ -211,9 +211,9 @@ impl Interpreter for Statement {
         lox: &mut Lox,
         environment: &mut Environment,
     ) -> Result<LoxObject, LoxError> {
-        if crate::lox::TRACE {
-            println!(">>> Interpreting at statement={} env={}", self.to_string(), environment.to_string());
-        }
+        crate::lox::trace(
+            format!(">>> Interpreting at statement={} env={}", self.to_string(), environment.to_string())
+        );
         match self {
             Statement::Print(expr) => {
                 let obj = expr.interpret(lox, environment)?;
@@ -226,13 +226,13 @@ impl Interpreter for Statement {
                     Some(expr) => expr.interpret(lox, environment),
                     None => Ok(LoxObject::Nil),
                 }?;
-                if crate::lox::TRACE {
-                    println!(">>> Defining new variable={} value={}", token.lexeme, value.to_string());
-                }
+                crate::lox::trace(
+                    format!(">>> Defining new variable={} value={}", token.lexeme, value.to_string())
+                );
                 environment.define(token.lexeme, value.clone());
-                if crate::lox::TRACE {
-                    println!(">>> After definition env={}", environment.to_string());
-                }
+                crate::lox::trace(
+                    format!(">>> After definition env={}", environment.to_string())
+                );
                 Ok(value)
             }
             Statement::Block(statements) => {
@@ -273,13 +273,13 @@ impl Environment {
     }
 
     fn define(&mut self, name: String, value: LoxObject) {
-        if crate::lox::TRACE {
-            println!(">>> Inserted into environment name={} val={}", name, value.to_string());
-        }
+        crate::lox::trace(
+            format!(">>> Inserted into environment name={} val={}", name, value.to_string())
+        );
         self.values.insert(name, value);
-        if crate::lox::TRACE {
-            println!(">>> Raw environment contents map={:?}", self.values);
-        }
+        crate::lox::trace(
+            format!(">>> Raw environment contents map={:?}", self.values)
+        );
     }
 
     fn get(
@@ -288,14 +288,12 @@ impl Environment {
         expression: Expression,
         name: Token,
     ) -> Result<LoxObject, LoxError> {
-        if crate::lox::TRACE {
-            println!(
-                ">>> Debugging get at expression={}, token={:?}, environment={}",
-                expression.to_string(),
-                name,
-                self.to_string(),
-            );
-        }
+        crate::lox::trace(format!(
+            ">>> Debugging get at expression={}, token={:?}, environment={}",
+            expression.to_string(),
+            name,
+            self.to_string(),
+        ));
         if let Some(value) = self.values.get(&name.lexeme) {
             Ok(value.clone())
         } else if self.enclosing.is_some() {

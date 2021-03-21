@@ -12,7 +12,13 @@ pub type LineNumber = u16; // 64K lines
 pub type FileLocation = usize; // 4G chars
 pub type LoxNumber = f64; // Numbers are floats, can be improved
 
-pub static TRACE: bool = false;
+static TRACE: bool = false;
+
+pub fn trace(message: String) {
+    if TRACE {
+        println!("{}", message);
+    }
+}
 
 pub enum LoxError {
     ScanError {

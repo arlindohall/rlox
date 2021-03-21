@@ -6,3 +6,6 @@ num = 5;
 
 str = str + ", goodbye";
 num = num - 2;
+
+print str;
+print num;

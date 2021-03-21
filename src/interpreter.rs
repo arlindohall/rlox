@@ -244,6 +244,7 @@ impl Interpreter for Statement {
                     last = statement.interpret(lox, &mut block)?;
                 }
 
+                std::mem::replace(environment, *block.enclosing.unwrap());
                 Ok(last)
             }
             _ => todo!(),

@@ -141,6 +141,7 @@ pub enum Statement {
     Expression(Expression),
     Block(Vec<Statement>),
     Var(Token, Option<Expression>),
+    If(Expression, Box<Statement>, Option<Box<Statement>>),
     None,
 }
 
@@ -238,13 +239,31 @@ impl Parser {
     }
 
     fn statement(&mut self, lox: &mut Lox) -> Result<Statement, LoxError> {
-        if self.match_token(TokenType::Print) {
-            Ok(self.print_statement(lox)?)
+        if self.match_token(TokenType::If) {
+            self.if_statement(lox)
+        } else if self.match_token(TokenType::Print) {
+            self.print_statement(lox)
         } else if self.match_token(TokenType::LeftBrace) {
-            Ok(Statement::Block(self.block(lox)?))
+            self.block(lox)
+                .map(|statements| Statement::Block(statements))
         } else {
-            Ok(self.expression_statement(lox)?)
+            self.expression_statement(lox)
         }
+    }
+
+    fn if_statement(&mut self, lox: &mut Lox) -> Result<Statement, LoxError> {
+        self.consume(lox, TokenType::LeftParen, "expect '(' after 'if'");
+        let condition = self.expression(lox)?;
+        self.consume(lox, TokenType::RightParen, "expect ')' after if condition");
+
+        let then_statement = Box::new(self.statement(lox)?);
+        let else_statement = if self.match_token(TokenType::Else) {
+            Some(Box::new(self.statement(lox)?))
+        } else {
+            None
+        };
+
+        Ok(Statement::If(condition, then_statement, else_statement))
     }
 
     fn print_statement(&mut self, lox: &mut Lox) -> Result<Statement, LoxError> {

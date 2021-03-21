@@ -78,6 +78,15 @@ impl AstPrinter for Statement {
                 format!("(define {} {})", name.lexeme, value.to_string())
             }
             Statement::Var(name, None) => format!("(define {} nil)", name.lexeme),
+            Statement::If(condition, then_st, Some(else_st)) => format!(
+                "(if {} {} {})",
+                condition.to_string(),
+                then_st.to_string(),
+                else_st.to_string()
+            ),
+            Statement::If(condition, then_st, None) => {
+                format!("(if {} {})", condition.to_string(), then_st.to_string())
+            }
             Statement::None => "()".to_owned(),
         }
     }

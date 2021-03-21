@@ -34,7 +34,7 @@ in turn produce a string. This is logically equivalent to `ExpressionPrinter`
 trait which each expression implements.
 */
 // TODO make these struct-style enums since I already wrote wrapper methods
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub enum Expression {
     Assignment(Token, Box<Expression>),
     Binary(Box<Expression>, Token, Box<Expression>),

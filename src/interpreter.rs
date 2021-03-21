@@ -53,7 +53,7 @@ pub trait Interpreter {
 impl AstPrinter for Expression {
     fn to_string(&self) -> String {
         match self {
-            Expression::Assignment(n, v) => format!("(define {} {})", n.lexeme, v.to_string()),
+            Expression::Assignment(n, v) => format!("(assign {} {})", n.lexeme, v.to_string()),
             Expression::Binary(l, t, r) => {
                 format!("({} {} {})", t.lexeme, l.to_string(), r.to_string())
             }
@@ -65,7 +65,21 @@ impl AstPrinter for Expression {
     }
 }
 
-// TODO: AstPrinter for Statement
+impl AstPrinter for Statement {
+    fn to_string(&self) -> String {
+        match self {
+            Statement::Block(statements) => {
+                let printed: Vec<String> = statements.iter().map(|s| s.to_string()).collect();
+                format!("(do {})", printed.join(" "))
+            },
+            Statement::Print(expr) => format!("(print {})", expr.to_string()),
+            Statement::Expression(expr) => format!("({})", expr.to_string()),
+            Statement::Var(name, Some(value)) => format!("(define {} {})", name.lexeme, value.to_string()),
+            Statement::Var(name, None) => format!("(define {} nil)", name.lexeme),
+            Statement::None => "()".to_owned(),
+        }
+    }
+}
 
 impl Interpreter for Expression {
     fn interpret(
@@ -176,8 +190,14 @@ impl Interpreter for Expression {
             Expression::Variable(token) => Ok(environment.get(lox, self, token)?.clone()),
             Expression::Assignment(name, value) => {
                 // TODO: This clone could be super expensive, if the whole program is one assignment
+                if crate::lox::TRACE {
+                    println!(">>> Modifying environment={}", environment.to_string());
+                }
                 let result = value.clone().interpret(lox, environment)?;
                 environment.assign(lox, *value, name, result.clone());
+                if crate::lox::TRACE {
+                    println!(">>> Done modifying environment={}", environment.to_string());
+                }
 
                 Ok(result)
             },
@@ -191,6 +211,9 @@ impl Interpreter for Statement {
         lox: &mut Lox,
         environment: &mut Environment,
     ) -> Result<LoxObject, LoxError> {
+        if crate::lox::TRACE {
+            println!(">>> Interpreting at statement={} env={}", self.to_string(), environment.to_string());
+        }
         match self {
             Statement::Print(expr) => {
                 let obj = expr.interpret(lox, environment)?;
@@ -203,8 +226,14 @@ impl Interpreter for Statement {
                     Some(expr) => expr.interpret(lox, environment),
                     None => Ok(LoxObject::Nil),
                 }?;
-                environment.define(token.lexeme, value);
-                Ok(LoxObject::Nil)
+                if crate::lox::TRACE {
+                    println!(">>> Defining new variable={} value={}", token.lexeme, value.to_string());
+                }
+                environment.define(token.lexeme, value.clone());
+                if crate::lox::TRACE {
+                    println!(">>> After definition env={}", environment.to_string());
+                }
+                Ok(value)
             }
             Statement::Block(statements) => {
                 let parent = std::mem::replace(environment, Environment::new());
@@ -243,7 +272,13 @@ impl Environment {
     }
 
     fn define(&mut self, name: String, value: LoxObject) {
+        if crate::lox::TRACE {
+            println!(">>> Inserted into environment name={} val={}", name, value.to_string());
+        }
         self.values.insert(name, value);
+        if crate::lox::TRACE {
+            println!(">>> Raw environment contents map={:?}", self.values);
+        }
     }
 
     fn get(
@@ -252,6 +287,14 @@ impl Environment {
         expression: Expression,
         name: Token,
     ) -> Result<LoxObject, LoxError> {
+        if crate::lox::TRACE {
+            println!(
+                ">>> Debugging get at expression={}, token={:?}, environment={}",
+                expression.to_string(),
+                name,
+                self.to_string(),
+            );
+        }
         if let Some(value) = self.values.get(&name.lexeme) {
             Ok(value.clone())
         } else if self.enclosing.is_some() {
@@ -289,6 +332,19 @@ impl Environment {
                 LoxErrorType::AssignmentError,
                 &format!("undefined variable {}", name.lexeme),
             ))
+        }
+    }
+}
+
+impl AstPrinter for Environment {
+    fn to_string(&self) -> String {
+        let values: Vec<String> = self.values.iter()
+                .map(|(k, v)| format!("(var {} {:?})", k, v))
+                .collect();
+        let values = values.join(" ");
+        match &self.enclosing {
+            Some(enc) => format!("(({}) (enclosing {}))", values, enc.to_string()),
+            None => format!("(({}))", values),
         }
     }
 }

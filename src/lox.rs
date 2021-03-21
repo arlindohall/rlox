@@ -12,7 +12,8 @@ pub type LineNumber = u16; // 64K lines
 pub type FileLocation = usize; // 4G chars
 pub type LoxNumber = f64; // Numbers are floats, can be improved
 
-#[derive(Debug)]
+pub static TRACE: bool = false;
+
 pub enum LoxError {
     ScanError {
         line: LineNumber,
@@ -176,7 +177,13 @@ impl Lox {
         let environment = &mut Environment::new();
 
         for statement in statements {
+            if TRACE {
+                println!(">>> Environment before statement env={}", environment.to_string());
+            }
             statement.interpret(self, environment);
+            if TRACE {
+                println!(">>> Environment after statement env={}", environment.to_string());
+            }
         }
 
         Ok(())

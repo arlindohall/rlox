@@ -265,7 +265,17 @@ impl Interpreter for Statement {
                 std::mem::replace(environment, *block.enclosing.unwrap());
                 Ok(last)
             }
-            _ => todo!(),
+            Statement::If(cond, then_st, else_st) => {
+                if Expression::is_truthy(cond.interpret(lox, environment)?) {
+                    then_st.interpret(lox, environment)
+                } else {
+                    match else_st {
+                        Some(st) => st.interpret(lox, environment),
+                        None => Ok(LoxObject::Nil),
+                    }
+                }
+            }
+            Statement::None => Ok(LoxObject::Nil),
         }
     }
 }

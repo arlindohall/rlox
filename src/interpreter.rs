@@ -174,7 +174,13 @@ impl Interpreter for Expression {
                 }
             }
             Expression::Variable(token) => Ok(environment.get(lox, self, token)?.clone()),
-            Expression::Assignment(token, value) => todo!(),
+            Expression::Assignment(name, value) => {
+                // TODO: This clone could be super expensive, if the whole program is one assignment
+                let result = value.clone().interpret(lox, environment)?;
+                environment.assign(lox, *value, name, result.clone());
+
+                Ok(result)
+            },
         }
     }
 }

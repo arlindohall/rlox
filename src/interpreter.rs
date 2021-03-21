@@ -263,6 +263,9 @@ impl Environment {
         if self.values.contains_key(&name.lexeme) {
             self.values.insert(name.lexeme, value);
             Ok(())
+        } else if let Some(environ) = &mut self.enclosing {
+            environ.assign(lox, expression, name, value);
+            Ok(())
         } else {
             Err(lox.runtime_error(
                 expression,

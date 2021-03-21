@@ -40,6 +40,7 @@ pub enum Expression {
     Binary(Box<Expression>, Token, Box<Expression>),
     Grouping(Box<Expression>),
     Literal(LoxObject),
+    Logical(Box<Expression>, Token, Box<Expression>),
     Unary(Token, Box<Expression>),
     Variable(Token),
 }
@@ -59,6 +60,10 @@ impl Expression {
 
     fn literal(l: LoxObject) -> Expression {
         Expression::Literal(l)
+    }
+
+    fn logical(l: Expression, op: Token, r: Expression) -> Expression {
+        Expression::Logical(Box::new(l), op, Box::new(r))
     }
 
     fn unary(t: Token, e: Expression) -> Expression {
@@ -294,7 +299,7 @@ impl Parser {
     }
 
     fn assignment(&mut self, lox: &mut Lox) -> Result<Expression, LoxError> {
-        let expr = self.equality(lox);
+        let expr = self.or(lox);
 
         // If this is an assignment, parse the RHS as a normal expression
         if self.match_token(TokenType::Equal) {
@@ -318,6 +323,30 @@ impl Parser {
         // If it turned out not to be an assignment or was invalid, return the
         // LHS as an expression only
         expr
+    }
+
+    fn or(&mut self, lox: &mut Lox) -> Result<Expression, LoxError> {
+        let mut left = self.and(lox)?;
+
+        while self.match_token(TokenType::Or) {
+            let op = self.previous();
+            let right = self.and(lox)?;
+            left = Expression::logical(left, op, right);
+        }
+
+        Ok(left)
+    }
+
+    fn and(&mut self, lox: &mut Lox) -> Result<Expression, LoxError> {
+        let mut left = self.equality(lox)?;
+
+        while self.match_token(TokenType::And) {
+            let op = self.previous();
+            let right = self.and(lox)?;
+            left = Expression::logical(left, op, right);
+        }
+
+        Ok(left)
     }
 
     fn equality(&mut self, lox: &mut Lox) -> Result<Expression, LoxError> {

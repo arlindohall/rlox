@@ -59,6 +59,7 @@ impl AstPrinter for Expression {
             }
             Expression::Grouping(e) => format!("{}", e.to_string()),
             Expression::Literal(l) => l.to_string(),
+            Expression::Logical(l, op, r) => format!("({} {} {})", op.lexeme, l.to_string(), r.to_string()),
             Expression::Unary(t, e) => format!("({} {})", t.lexeme, e.to_string()),
             Expression::Variable(t) => format!("{}", t.lexeme),
         }
@@ -213,6 +214,9 @@ impl Interpreter for Expression {
                 ));
 
                 Ok(result)
+            }
+            Expression::Logical(l, op, r) => {
+                todo!()
             }
         }
     }

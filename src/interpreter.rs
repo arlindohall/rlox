@@ -1,7 +1,7 @@
 // Ignore while building
 #![ allow( dead_code, unused_imports, unused_variables, unused_must_use ) ]
 
-use std::{borrow::Borrow, collections::HashMap, env};
+use std::{borrow::Borrow, collections::HashMap};
 
 use crate::lox::{Lox, LoxError, LoxErrorType, LoxNumber};
 use crate::parser::{Expression, LoxObject, Statement};
@@ -199,6 +199,17 @@ impl Interpreter for Statement {
                 }?;
                 environment.define(token.lexeme, value);
                 Ok(LoxObject::Nil)
+            }
+            Statement::Block(statements) => {
+                let parent = std::mem::replace(environment, Environment::new());
+                let mut block = Environment::extend(parent);
+
+                let mut last = LoxObject::Nil;
+                for statement in statements {
+                    last = statement.interpret(lox, &mut block)?;
+                }
+
+                Ok(last)
             }
             _ => todo!(),
         }

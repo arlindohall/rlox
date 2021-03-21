@@ -1,7 +1,7 @@
 // Ignore while building
 #![ allow( dead_code, unused_imports, unused_variables, unused_must_use ) ]
 
-use std::collections::HashMap;
+use std::{borrow::Borrow, collections::HashMap, env};
 
 use crate::lox::{Lox, LoxError, LoxErrorType, LoxNumber};
 use crate::parser::{Expression, LoxObject, Statement};
@@ -173,7 +173,7 @@ impl Interpreter for Expression {
                     _ => panic!("unimplemented binary operator"),
                 }
             }
-            Expression::Variable(token) => Ok(environment.get(&token).clone()),
+            Expression::Variable(token) => Ok(environment.get(token).clone()),
             Expression::Assignment(token, value) => todo!(),
         }
     }
@@ -207,12 +207,21 @@ impl Interpreter for Statement {
 
 pub struct Environment {
     values: HashMap<String, LoxObject>,
+    enclosing: Option<Box<Environment>>,
 }
 
 impl Environment {
     pub fn new() -> Environment {
         Environment {
             values: HashMap::new(),
+            enclosing: None,
+        }
+    }
+
+    pub fn extend(environment: Environment) -> Environment {
+        Environment {
+            values: HashMap::new(),
+            enclosing: Some(Box::new(environment)),
         }
     }
 
@@ -229,12 +238,35 @@ impl Environment {
      * One result of this decision to part from Lox's definition in
      * the text is that we could, like Lua, delete values any time
      * their name is set to `Nil`
+     *
+     * Maybe I should re-consider? TODO
      */
-    fn get<'a, 'b>(&'a self, name: &'b Token) -> &'a LoxObject {
+    fn get(&self, name: Token) -> LoxObject {
         if let Some(value) = self.values.get(&name.lexeme) {
-            value
+            value.clone()
+        } else if self.enclosing.is_some() {
+            self.enclosing.as_ref().unwrap().get(name).clone()
         } else {
-            &LoxObject::Nil
+            LoxObject::Nil
+        }
+    }
+
+    fn assign(
+        &mut self,
+        lox: &mut Lox,
+        expression: Expression,
+        name: Token,
+        value: LoxObject,
+    ) -> Result<(), LoxError> {
+        if self.values.contains_key(&name.lexeme) {
+            self.values.insert(name.lexeme, value);
+            Ok(())
+        } else {
+            Err(lox.runtime_error(
+                expression,
+                LoxErrorType::AssignmentError,
+                &format!("undefined variable {}", name.lexeme),
+            ))
         }
     }
 }

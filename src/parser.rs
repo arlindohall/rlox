@@ -139,6 +139,7 @@ impl LoxObject {
 pub enum Statement {
     Print(Expression),
     Expression(Expression),
+    Block(Vec<Statement>),
     Var(Token, Option<Expression>),
     None,
 }
@@ -238,16 +239,29 @@ impl Parser {
 
     fn statement(&mut self, lox: &mut Lox) -> Result<Statement, LoxError> {
         if self.match_token(TokenType::Print) {
-            return Ok(self.print_statement(lox)?);
+            Ok(self.print_statement(lox)?)
+        } else if self.match_token(TokenType::LeftBrace) {
+            Ok(Statement::Block(self.block(lox)?))
+        } else {
+            Ok(self.expression_statement(lox)?)
         }
-
-        Ok(self.expression_statement(lox)?)
     }
 
     fn print_statement(&mut self, lox: &mut Lox) -> Result<Statement, LoxError> {
         let value = self.expression(lox)?;
         self.consume(lox, TokenType::Semicolon, "expect ';' after value");
         Ok(Statement::Print(value))
+    }
+
+    fn block(&mut self, lox: &mut Lox) -> Result<Vec<Statement>, LoxError> {
+        let mut statements = Vec::new();
+
+        while self.check(TokenType::RightBrace) && !self.is_at_end() {
+            statements.push(self.declaration(lox)?);
+        }
+
+        self.consume(lox, TokenType::RightBrace, "expect '}' after block");
+        Ok(statements)
     }
 
     fn expression_statement(&mut self, lox: &mut Lox) -> Result<Statement, LoxError> {

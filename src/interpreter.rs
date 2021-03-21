@@ -173,7 +173,7 @@ impl Interpreter for Expression {
                     _ => panic!("unimplemented binary operator"),
                 }
             }
-            Expression::Variable(token) => Ok(environment.get(token).clone()),
+            Expression::Variable(token) => Ok(environment.get(lox, self, token)?.clone()),
             Expression::Assignment(token, value) => todo!(),
         }
     }
@@ -229,25 +229,27 @@ impl Environment {
         self.values.insert(name, value);
     }
 
-    /*
-     * The book throws an error when a value doesn't exist, but
-     * this is (1) more similar to Lua which I enjoy and (2)
-     * something that I feel more languages should have, especially
-     * dyanamic languages.
-     *
-     * One result of this decision to part from Lox's definition in
-     * the text is that we could, like Lua, delete values any time
-     * their name is set to `Nil`
-     *
-     * Maybe I should re-consider? TODO
-     */
-    fn get(&self, name: Token) -> LoxObject {
+    fn get(
+        &self,
+        lox: &mut Lox,
+        expression: Expression,
+        name: Token,
+    ) -> Result<LoxObject, LoxError> {
         if let Some(value) = self.values.get(&name.lexeme) {
-            value.clone()
+            Ok(value.clone())
         } else if self.enclosing.is_some() {
-            self.enclosing.as_ref().unwrap().get(name).clone()
+            Ok(self
+                .enclosing
+                .as_ref()
+                .unwrap()
+                .get(lox, expression, name)?
+                .clone())
         } else {
-            LoxObject::Nil
+            Err(lox.runtime_error(
+                expression,
+                LoxErrorType::AssignmentError,
+                &format!("undefined variable {}", name.lexeme),
+            ))
         }
     }
 

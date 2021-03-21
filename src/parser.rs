@@ -256,7 +256,7 @@ impl Parser {
     fn block(&mut self, lox: &mut Lox) -> Result<Vec<Statement>, LoxError> {
         let mut statements = Vec::new();
 
-        while self.check(TokenType::RightBrace) && !self.is_at_end() {
+        while !self.check(TokenType::RightBrace) && !self.is_at_end() {
             statements.push(self.declaration(lox)?);
         }
 

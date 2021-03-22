@@ -59,12 +59,12 @@ impl AstPrinter for Expression {
             }
             Expression::Grouping(e) => format!("{}", e.to_string()),
             Expression::Literal(l) => l.to_string(),
-            Expression::Logical(l, op, r) => format!("({} {} {})", op.lexeme, l.to_string(), r.to_string()),
+            Expression::Logical(l, op, r) => {
+                format!("({} {} {})", op.lexeme, l.to_string(), r.to_string())
+            }
             Expression::Unary(t, e) => format!("({} {})", t.lexeme, e.to_string()),
             Expression::Call(callee, _, args) => {
-                let args: Vec<String> = args.iter()
-                        .map(|arg| arg.to_string())
-                        .collect();
+                let args: Vec<String> = args.iter().map(|arg| arg.to_string()).collect();
                 format!("({} {})", callee.to_string(), args.join(" "))
             }
             Expression::Variable(t) => format!("{}", t.lexeme),
@@ -94,9 +94,11 @@ impl AstPrinter for Statement {
             Statement::If(condition, then_st, None) => {
                 format!("(if ({}) ({}))", condition.to_string(), then_st.to_string())
             }
-            Statement::While(condition, do_st) => {
-                format!("(do-while ({}) ({})", condition.to_string(), do_st.to_string())
-            }
+            Statement::While(condition, do_st) => format!(
+                "(do-while ({}) ({})",
+                condition.to_string(),
+                do_st.to_string()
+            ),
             Statement::None => "()".to_owned(),
         }
     }
@@ -242,7 +244,7 @@ impl Interpreter for Expression {
                 for arg in args {
                     arguments.push(arg.interpret(lox, environment)?);
                 }
-                
+
                 LoxFunction::try_from(callee)?.call_lox_func(&self, arguments)
             }
         }
@@ -310,7 +312,7 @@ impl Interpreter for Statement {
                 // TODO: This is expensive, maybe don't consume on interpret?
                 while Expression::is_truthy(cond.clone().interpret(lox, environment)?) {
                     do_st.clone().interpret(lox, environment)?;
-                } 
+                }
 
                 Ok(LoxObject::Nil)
             }
@@ -421,17 +423,21 @@ impl AstPrinter for Environment {
 }
 
 struct LoxFunction {
-    subj: LoxObject
+    subj: LoxObject,
 }
 
 impl LoxFunction {
     fn try_from(subj: LoxObject) -> Result<LoxFunction, LoxError> {
         match subj {
-            _ => todo!()
+            _ => todo!(),
         }
     }
 
-    fn call_lox_func(&self, int: &dyn Interpreter, args: Vec<LoxObject>) -> Result<LoxObject, LoxError> {
+    fn call_lox_func(
+        &self,
+        int: &dyn Interpreter,
+        args: Vec<LoxObject>,
+    ) -> Result<LoxObject, LoxError> {
         todo!()
     }
 }

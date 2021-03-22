@@ -286,7 +286,11 @@ impl Parser {
             None
         } else {
             let inc = self.expression(lox)?;
-            self.consume(lox, TokenType::RightParen, "expect ')' after for increment clause")?;
+            self.consume(
+                lox,
+                TokenType::RightParen,
+                "expect ')' after for increment clause",
+            )?;
             Some(inc)
         };
 
@@ -294,12 +298,15 @@ impl Parser {
 
         body = match increment {
             Some(inc) => Statement::Block(vec![body, Statement::Expression(inc)]),
-            None => body
+            None => body,
         };
 
         body = match condition {
             Some(cond) => Statement::While(cond, Box::new(body)),
-            None => Statement::While(Expression::Literal(LoxObject::Boolean(true)), Box::new(body)),
+            None => Statement::While(
+                Expression::Literal(LoxObject::Boolean(true)),
+                Box::new(body),
+            ),
         };
 
         body = match initializer {
@@ -313,7 +320,11 @@ impl Parser {
     fn while_statement(&mut self, lox: &mut Lox) -> Result<Statement, LoxError> {
         self.consume(lox, TokenType::LeftParen, "expect '(' after 'while'");
         let condition = self.expression(lox)?;
-        self.consume(lox, TokenType::RightParen, "expect ')' after while condition");
+        self.consume(
+            lox,
+            TokenType::RightParen,
+            "expect ')' after while condition",
+        );
         let body = self.statement(lox)?;
 
         Ok(Statement::While(condition, Box::new(body)))
@@ -497,14 +508,22 @@ impl Parser {
                 if !self.match_token(TokenType::Comma) {
                     break;
                 } else if arguments.len() >= 255 {
-                    return Err(lox.runtime_error(expr, LoxErrorType::FunctionCallError, "can't have more than 255 arguments"));
+                    return Err(lox.runtime_error(
+                        expr,
+                        LoxErrorType::FunctionCallError,
+                        "can't have more than 255 arguments",
+                    ));
                 } else {
                     arguments.push(self.expression(lox)?);
                 }
             }
         }
 
-        let paren = self.consume(lox, TokenType::RightParen, "expect ')' after funnction arguments")?;
+        let paren = self.consume(
+            lox,
+            TokenType::RightParen,
+            "expect ')' after funnction arguments",
+        )?;
 
         Ok(Expression::Call(Box::new(expr), paren, arguments))
     }

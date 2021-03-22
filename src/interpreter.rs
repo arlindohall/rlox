@@ -238,14 +238,27 @@ impl Interpreter for Expression {
                 }
             }
             Expression::Call(callee, paren, args) => {
-                let callee = callee.interpret(lox, environment)?;
+                let callee_obj = callee.clone().interpret(lox, environment)?;
 
                 let mut arguments = Vec::new();
                 for arg in args {
                     arguments.push(arg.interpret(lox, environment)?);
                 }
 
-                LoxFunction::try_from(callee)?.call_lox_func(&self, arguments)
+                let func = LoxFunction::try_from(callee_obj)?;
+                if func.arity() as usize != arguments.len() {
+                    Err(lox.runtime_error(
+                        *callee,
+                        LoxErrorType::FunctionCallError,
+                        &format!(
+                            "expected {} arguments but got {}.",
+                            func.arity(),
+                            arguments.len()
+                        ),
+                    ))
+                } else {
+                    func.call_lox_func(&self, arguments)
+                }
             }
         }
     }
@@ -431,6 +444,10 @@ impl LoxFunction {
         match subj {
             _ => todo!(),
         }
+    }
+
+    fn arity(&self) -> u8 {
+        todo!()
     }
 
     fn call_lox_func(

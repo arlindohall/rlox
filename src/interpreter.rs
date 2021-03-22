@@ -445,21 +445,35 @@ impl AstPrinter for Environment {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone)]
 pub struct LoxCallable {
     arity: u8,
     env: Environment,
     block: Executable,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+impl std::fmt::Debug for LoxCallable {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "<Function(arity={})>", self.arity)
+    }
+}
+
+// TODO: we could theoretically give each function some ID to track,
+// and compare equal if the ids are equal even though the two would be clones
+impl PartialEq for LoxCallable {
+    fn eq(&self, other: &Self) -> bool {
+        false
+    }
+}
+
+#[derive(Clone)]
 enum Executable {
     Block(Box<Statement>),
-    Native(fn(Vec<LoxObject>) -> Result<LoxObject, LoxError>),
+    Native(fn(&mut Lox, Vec<LoxObject>) -> Result<LoxObject, LoxError>),
 }
 
 impl LoxCallable {
-    pub fn native(arity: u8, f: fn(Vec<LoxObject>) -> Result<LoxObject, LoxError>) -> LoxCallable {
+    pub fn native(arity: u8, f: fn(&mut Lox, Vec<LoxObject>) -> Result<LoxObject, LoxError>) -> LoxCallable {
         LoxCallable {
             arity,
             env: Environment::new(),
@@ -498,7 +512,7 @@ impl LoxCallable {
         // TODO: make new environment with args
         match &self.block {
             Executable::Block(st) => st.clone().interpret(lox, &mut self.env),
-            Executable::Native(f) => f(args),
+            Executable::Native(f) => f(lox, args),
         }
     }
 }

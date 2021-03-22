@@ -509,7 +509,6 @@ impl LoxCallable {
         lox: &mut Lox,
         args: Vec<LoxObject>,
     ) -> Result<LoxObject, LoxError> {
-        // TODO: make new environment with args
         match &self.block {
             Executable::Interpreted(body, names) => {
                 let original = std::mem::replace(&mut self.env, Environment::new());
@@ -517,7 +516,18 @@ impl LoxCallable {
 
                 names.iter()
                         .enumerate()
-                        .for_each(|(i, x)| wrapper.define(x.to_owned(), args[i].clone()));
+                        .for_each(|(i, x)| {
+                            // Here we guard against calling with different length args and
+                            // expected args (names). We throw an error in the interpreter if
+                            // we reach this state, but still would like to ensure nobody can
+                            // abuse this method to cause a panic
+                            let name = x.to_owned();
+                            let value = match args.get(i) {
+                                Some(val) => val.clone(),
+                                None => LoxObject::Nil
+                            };
+                            wrapper.define(name, value);
+                        });
 
                 let result = body.clone().interpret(lox, &mut wrapper);
 

@@ -3,8 +3,11 @@
 
 use std::collections::HashMap;
 
-use crate::lox::{FileLocation, Lox, LoxError, LoxErrorType, LoxNumber};
 use crate::scanner::{Literal, Token, TokenType};
+use crate::{
+    interpreter::LoxCallable,
+    lox::{FileLocation, Lox, LoxError, LoxErrorType, LoxNumber},
+};
 
 /*******************************************************************************
 ********************************************************************************
@@ -34,7 +37,7 @@ in turn produce a string. This is logically equivalent to `ExpressionPrinter`
 trait which each expression implements.
 */
 // TODO make these struct-style enums since I already wrote wrapper methods
-#[derive(Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Expression {
     Assignment(Token, Box<Expression>),
     Binary(Box<Expression>, Token, Box<Expression>),
@@ -114,6 +117,7 @@ pub enum LoxObject {
     String(String),
     Number(LoxNumber),
     Object(HashMap<String, Box<LoxObject>>),
+    Function(LoxCallable),
     Nil,
 }
 
@@ -125,6 +129,7 @@ impl LoxObject {
             LoxObject::Number(n) => format!("{}", n),
             // TODO: maybe actually print objects
             LoxObject::Object(_) => String::from("<Object>"),
+            LoxObject::Function(_) => String::from("<Function>"),
             LoxObject::Nil => String::from("nil"),
         }
     }
@@ -135,6 +140,7 @@ impl LoxObject {
             LoxObject::String(_) => "String",
             LoxObject::Number(_) => "Number",
             LoxObject::Object(_) => "Object",
+            LoxObject::Function(_) => "Function",
             LoxObject::Nil => "Nil",
         };
 
@@ -142,7 +148,7 @@ impl LoxObject {
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Statement {
     Print(Expression),
     Expression(Expression),

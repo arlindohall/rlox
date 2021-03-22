@@ -27,7 +27,7 @@ interpreted.
 This is super simple, a helper enum and accessor methods, plus a stringify
 method `repr` for debugging.
 */
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Literal {
     Boolean(bool),
     String(String),
@@ -113,7 +113,7 @@ pub enum TokenType {
     Eof,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Token {
     pub token_type: TokenType,
     pub lexeme: String,

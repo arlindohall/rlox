@@ -245,7 +245,7 @@ impl Interpreter for Expression {
                     arguments.push(arg.interpret(lox, environment)?);
                 }
 
-                let func = LoxFunction::try_from(callee_obj)?;
+                let mut func: LoxCallable = LoxCallable::try_from(lox, callee_obj)?;
                 if func.arity() as usize != arguments.len() {
                     Err(lox.runtime_error(
                         *callee,
@@ -257,7 +257,7 @@ impl Interpreter for Expression {
                         ),
                     ))
                 } else {
-                    func.call_lox_func(&self, arguments)
+                    func.call_lox_func(lox, arguments)
                 }
             }
         }
@@ -334,6 +334,7 @@ impl Interpreter for Statement {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
 pub struct Environment {
     values: HashMap<String, LoxObject>,
     enclosing: Option<Box<Environment>>,
@@ -365,6 +366,15 @@ impl Environment {
             ">>> Raw environment contents map={:?}",
             self.values
         ));
+    }
+
+    fn define_global(&mut self, name: String, value: LoxObject) {
+        match &mut self.enclosing {
+            Some(env) => env.define_global(name, value),
+            None => {
+                self.values.insert(name, value);
+            }
+        }
     }
 
     fn get(
@@ -435,26 +445,45 @@ impl AstPrinter for Environment {
     }
 }
 
-struct LoxFunction {
-    subj: LoxObject,
+#[derive(Debug, Clone, PartialEq)]
+pub struct LoxCallable {
+    arity: u8,
+    env: Environment,
+    block: Box<Statement>,
 }
 
-impl LoxFunction {
-    fn try_from(subj: LoxObject) -> Result<LoxFunction, LoxError> {
-        match subj {
-            _ => todo!(),
+impl LoxCallable {
+    fn try_from(lox: &mut Lox, object: LoxObject) -> Result<LoxCallable, LoxError> {
+        fn err(lox: &mut Lox, object: LoxObject) -> Result<LoxCallable, LoxError> {
+            Err(lox.runtime_error(
+                Expression::Literal(object),
+                LoxErrorType::FunctionCallError,
+                &format!(""),
+            ))
+        };
+        match &object {
+            // TODO: This is a total guess but I have a feeling we're heading somewhere like this
+            LoxObject::Function(f) => Ok(f.clone()),
+            LoxObject::Object(vals) => {
+                match vals.get("__call") {
+                    Some(obj) => Self::try_from(lox, *(obj.clone())),
+                    None => err(lox, object),
+                }
+            }
+            _ => err(lox, object),
         }
     }
 
     fn arity(&self) -> u8 {
-        todo!()
+        self.arity
     }
 
     fn call_lox_func(
-        &self,
-        int: &dyn Interpreter,
+        &mut self,
+        lox: &mut Lox,
         args: Vec<LoxObject>,
     ) -> Result<LoxObject, LoxError> {
-        todo!()
+        // TODO: make new environment with args
+        self.block.clone().interpret(lox, &mut self.env)
     }
 }

@@ -155,6 +155,7 @@ pub enum Statement {
     Block(Vec<Statement>),
     Var(Token, Option<Expression>),
     If(Expression, Box<Statement>, Option<Box<Statement>>),
+    Function(Token, Vec<Token>, Vec<Statement>),
     While(Expression, Box<Statement>),
     None,
 }
@@ -207,7 +208,9 @@ impl Parser {
     }
 
     fn declaration(&mut self, lox: &mut Lox) -> Result<Statement, LoxError> {
-        let declr = if self.match_token(TokenType::Var) {
+        let declr = if self.match_token(TokenType::Fun) {
+            self.function(lox, "function")
+        } else if self.match_token(TokenType::Var) {
             self.var_declaration(lox)
         } else {
             self.statement(lox)
@@ -220,6 +223,49 @@ impl Parser {
                 Err(e)
             }
         }
+    }
+
+    fn function(&mut self, lox: &mut Lox, kind: &str) -> Result<Statement, LoxError> {
+        let name = self.consume(lox, TokenType::Identifier, &format!("expect {} name", kind))?;
+        self.consume(
+            lox,
+            TokenType::LeftParen,
+            &format!("expect '(' after {} name", kind),
+        )?;
+        let mut params = Vec::new();
+        if !self.check(TokenType::RightParen) {
+            loop {
+                if params.len() >= 255 {
+                    return Err(lox.parse_error(
+                        name,
+                        LoxErrorType::DefinitionError,
+                        &format!("{} cannot have more than 255 parameters", kind),
+                    ));
+                } else {
+                    params.push(self.consume(
+                        lox,
+                        TokenType::Identifier,
+                        "expected parameter name",
+                    )?)
+                }
+                if !self.match_token(TokenType::Comma) {
+                    break;
+                }
+            }
+        }
+        self.consume(
+            lox,
+            TokenType::RightParen,
+            &format!("expected ')' after {} parameters", kind),
+        );
+
+        self.consume(
+            lox,
+            TokenType::LeftBrace,
+            &format!("expect '{{' before {} body", kind),
+        );
+        let body = self.block(lox)?;
+        Ok(Statement::Function(name, params, body))
     }
 
     fn var_declaration(&mut self, lox: &mut Lox) -> Result<Statement, LoxError> {
@@ -511,9 +557,7 @@ impl Parser {
 
         if !self.check(TokenType::RightParen) {
             loop {
-                if !self.match_token(TokenType::Comma) {
-                    break;
-                } else if arguments.len() >= 255 {
+                if arguments.len() >= 255 {
                     return Err(lox.runtime_error(
                         expr,
                         LoxErrorType::FunctionCallError,
@@ -521,6 +565,9 @@ impl Parser {
                     ));
                 } else {
                     arguments.push(self.expression(lox)?);
+                }
+                if !self.match_token(TokenType::Comma) {
+                    break;
                 }
             }
         }

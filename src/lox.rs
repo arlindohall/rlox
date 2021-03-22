@@ -4,8 +4,11 @@
 use std::cmp::PartialEq;
 use std::collections::HashMap;
 
-use crate::{builtins::clock, parser::{Expression, Parser}};
 use crate::scanner::{Literal, Scanner, Token, TokenType};
+use crate::{
+    builtins::clock,
+    parser::{Expression, Parser},
+};
 use crate::{
     interpreter::{AstPrinter, Environment, Interpreter},
     parser::LoxObject,
@@ -66,6 +69,7 @@ pub enum LoxErrorType {
     // Parse errors
     ExpressionError,
     IncompleteExpression,
+    DefinitionError,
 
     // Runtime errors
     TypeError,

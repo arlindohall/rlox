@@ -99,6 +99,19 @@ impl AstPrinter for Statement {
                 condition.to_string(),
                 do_st.to_string()
             ),
+            Statement::Function(name, params, body) => format!(
+                "(define ({} {}) ({}))",
+                name.lexeme,
+                params
+                    .iter()
+                    .map(|p| p.lexeme.to_owned())
+                    .collect::<Vec<String>>()
+                    .join(" "),
+                body.iter()
+                    .map(|s| s.clone().to_string())
+                    .collect::<Vec<String>>()
+                    .join(" "),
+            ),
             Statement::None => "()".to_owned(),
         }
     }
@@ -329,6 +342,18 @@ impl Interpreter for Statement {
 
                 Ok(LoxObject::Nil)
             }
+            Statement::Function(name, params, body) => {
+                let params = params.iter().map(|param| param.lexeme.to_owned()).collect();
+                // TODO: This is pretty weird, cloning the environment, might need something
+                // more sophisticated where we manage environment trees dynamically
+                let func = LoxObject::Function(LoxCallable::interpreted(
+                    params,
+                    body,
+                    environment.clone(),
+                ));
+                environment.define(name.lexeme, func);
+                Ok(LoxObject::Nil)
+            }
             Statement::None => Ok(LoxObject::Nil),
         }
     }
@@ -449,7 +474,7 @@ impl AstPrinter for Environment {
 pub struct LoxCallable {
     arity: u8,
     env: Environment,
-    block: Executable,
+    exec: Executable,
 }
 
 impl std::fmt::Debug for LoxCallable {
@@ -468,16 +493,27 @@ impl PartialEq for LoxCallable {
 
 #[derive(Clone)]
 enum Executable {
-    Interpreted(Box<Statement>, Vec<String>),
+    Interpreted(Vec<Statement>, Vec<String>),
     Native(fn(&mut Lox, Vec<LoxObject>) -> Result<LoxObject, LoxError>),
 }
 
 impl LoxCallable {
-    pub fn native(arity: u8, f: fn(&mut Lox, Vec<LoxObject>) -> Result<LoxObject, LoxError>) -> LoxCallable {
+    pub fn native(
+        arity: u8,
+        f: fn(&mut Lox, Vec<LoxObject>) -> Result<LoxObject, LoxError>,
+    ) -> LoxCallable {
         LoxCallable {
             arity,
             env: Environment::new(),
-            block: Executable::Native(f),
+            exec: Executable::Native(f),
+        }
+    }
+
+    pub fn interpreted(params: Vec<String>, body: Vec<Statement>, env: Environment) -> LoxCallable {
+        LoxCallable {
+            arity: params.len() as u8,
+            exec: Executable::Interpreted(body, params),
+            env,
         }
     }
 
@@ -509,31 +545,32 @@ impl LoxCallable {
         lox: &mut Lox,
         args: Vec<LoxObject>,
     ) -> Result<LoxObject, LoxError> {
-        match &self.block {
+        match &self.exec {
             Executable::Interpreted(body, names) => {
                 let original = std::mem::replace(&mut self.env, Environment::new());
                 let mut wrapper = Environment::extend(original);
 
-                names.iter()
-                        .enumerate()
-                        .for_each(|(i, x)| {
-                            // Here we guard against calling with different length args and
-                            // expected args (names). We throw an error in the interpreter if
-                            // we reach this state, but still would like to ensure nobody can
-                            // abuse this method to cause a panic
-                            let name = x.to_owned();
-                            let value = match args.get(i) {
-                                Some(val) => val.clone(),
-                                None => LoxObject::Nil
-                            };
-                            wrapper.define(name, value);
-                        });
+                names.iter().enumerate().for_each(|(i, x)| {
+                    // Here we guard against calling with different length args and
+                    // expected args (names). We throw an error in the interpreter if
+                    // we reach this state, but still would like to ensure nobody can
+                    // abuse this method to cause a panic
+                    let name = x.to_owned();
+                    let value = match args.get(i) {
+                        Some(val) => val.clone(),
+                        None => LoxObject::Nil,
+                    };
+                    wrapper.define(name, value);
+                });
 
-                let result = body.clone().interpret(lox, &mut wrapper);
+                let mut result = LoxObject::Nil;
+                for statement in body {
+                    result = statement.clone().interpret(lox, &mut wrapper)?;
+                }
 
                 std::mem::replace(&mut self.env, *wrapper.enclosing.unwrap());
 
-                result
+                Ok(result)
             }
             Executable::Native(f) => f(lox, args),
         }

@@ -141,12 +141,14 @@ impl LoxObject {
     }
 }
 
+#[derive(Clone)]
 pub enum Statement {
     Print(Expression),
     Expression(Expression),
     Block(Vec<Statement>),
     Var(Token, Option<Expression>),
     If(Expression, Box<Statement>, Option<Box<Statement>>),
+    While(Expression, Box<Statement>),
     None,
 }
 
@@ -248,12 +250,23 @@ impl Parser {
             self.if_statement(lox)
         } else if self.match_token(TokenType::Print) {
             self.print_statement(lox)
+        } else if self.match_token(TokenType::While) {
+            self.while_statement(lox)
         } else if self.match_token(TokenType::LeftBrace) {
             self.block(lox)
                 .map(|statements| Statement::Block(statements))
         } else {
             self.expression_statement(lox)
         }
+    }
+
+    fn while_statement(&mut self, lox: &mut Lox) -> Result<Statement, LoxError> {
+        self.consume(lox, TokenType::LeftParen, "expect '(' after 'while'");
+        let condition = self.expression(lox)?;
+        self.consume(lox, TokenType::RightParen, "expect ')' after while condition");
+        let body = self.statement(lox)?;
+
+        Ok(Statement::While(condition, Box::new(body)))
     }
 
     fn if_statement(&mut self, lox: &mut Lox) -> Result<Statement, LoxError> {

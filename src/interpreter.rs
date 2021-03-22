@@ -80,13 +80,16 @@ impl AstPrinter for Statement {
             }
             Statement::Var(name, None) => format!("(define {} nil)", name.lexeme),
             Statement::If(condition, then_st, Some(else_st)) => format!(
-                "(if {} {} {})",
+                "(if ({}) ({}) ({}))",
                 condition.to_string(),
                 then_st.to_string(),
                 else_st.to_string()
             ),
             Statement::If(condition, then_st, None) => {
-                format!("(if {} {})", condition.to_string(), then_st.to_string())
+                format!("(if ({}) ({}))", condition.to_string(), then_st.to_string())
+            }
+            Statement::While(condition, do_st) => {
+                format!("(do-while ({}) ({})", condition.to_string(), do_st.to_string())
             }
             Statement::None => "()".to_owned(),
         }
@@ -286,6 +289,14 @@ impl Interpreter for Statement {
                         None => Ok(LoxObject::Nil),
                     }
                 }
+            }
+            Statement::While(cond, do_st) => {
+                // TODO: This is expensive, maybe don't consume on interpret?
+                while Expression::is_truthy(cond.clone().interpret(lox, environment)?) {
+                    do_st.clone().interpret(lox, environment)?;
+                } 
+
+                Ok(LoxObject::Nil)
             }
             Statement::None => Ok(LoxObject::Nil),
         }

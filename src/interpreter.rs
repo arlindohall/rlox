@@ -61,6 +61,12 @@ impl AstPrinter for Expression {
             Expression::Literal(l) => l.to_string(),
             Expression::Logical(l, op, r) => format!("({} {} {})", op.lexeme, l.to_string(), r.to_string()),
             Expression::Unary(t, e) => format!("({} {})", t.lexeme, e.to_string()),
+            Expression::Call(callee, _, args) => {
+                let args: Vec<String> = args.iter()
+                        .map(|arg| arg.to_string())
+                        .collect();
+                format!("({} {})", callee.to_string(), args.join(" "))
+            }
             Expression::Variable(t) => format!("{}", t.lexeme),
         }
     }
@@ -228,6 +234,16 @@ impl Interpreter for Expression {
                 } else {
                     r.interpret(lox, environment)
                 }
+            }
+            Expression::Call(callee, paren, args) => {
+                let callee = callee.interpret(lox, environment)?;
+
+                let mut arguments = Vec::new();
+                for arg in args {
+                    arguments.push(arg.interpret(lox, environment)?);
+                }
+                
+                LoxFunction::try_from(callee)?.call_lox_func(&self, arguments)
             }
         }
     }
@@ -401,5 +417,21 @@ impl AstPrinter for Environment {
             Some(enc) => format!("(({}) (enclosing {}))", values, enc.to_string()),
             None => format!("(({}))", values),
         }
+    }
+}
+
+struct LoxFunction {
+    subj: LoxObject
+}
+
+impl LoxFunction {
+    fn try_from(subj: LoxObject) -> Result<LoxFunction, LoxError> {
+        match subj {
+            _ => todo!()
+        }
+    }
+
+    fn call_lox_func(&self, int: &dyn Interpreter, args: Vec<LoxObject>) -> Result<LoxObject, LoxError> {
+        todo!()
     }
 }

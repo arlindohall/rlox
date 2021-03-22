@@ -42,6 +42,7 @@ pub enum Expression {
     Literal(LoxObject),
     Logical(Box<Expression>, Token, Box<Expression>),
     Unary(Token, Box<Expression>),
+    Call(Box<Expression>, Token, Vec<Expression>),
     Variable(Token),
 }
 
@@ -470,8 +471,42 @@ impl Parser {
             let right = self.unary(lox)?;
             Ok(Expression::unary(operator, right))
         } else {
-            self.primary(lox)
+            self.call(lox)
         }
+    }
+
+    fn call(&mut self, lox: &mut Lox) -> Result<Expression, LoxError> {
+        let mut expr = self.primary(lox)?;
+
+        loop {
+            if self.match_token(TokenType::LeftParen) {
+                expr = self.finish_call(lox, expr)?;
+            } else {
+                break;
+            }
+        }
+
+        Ok(expr)
+    }
+
+    fn finish_call(&mut self, lox: &mut Lox, expr: Expression) -> Result<Expression, LoxError> {
+        let mut arguments = Vec::new();
+
+        if !self.check(TokenType::RightParen) {
+            loop {
+                if !self.match_token(TokenType::Comma) {
+                    break;
+                } else if arguments.len() >= 255 {
+                    return Err(lox.runtime_error(expr, LoxErrorType::FunctionCallError, "can't have more than 255 arguments"));
+                } else {
+                    arguments.push(self.expression(lox)?);
+                }
+            }
+        }
+
+        let paren = self.consume(lox, TokenType::RightParen, "expect ')' after funnction arguments")?;
+
+        Ok(Expression::Call(Box::new(expr), paren, arguments))
     }
 
     fn primary(&mut self, lox: &mut Lox) -> Result<Expression, LoxError> {

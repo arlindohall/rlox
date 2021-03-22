@@ -355,7 +355,7 @@ impl Environment {
         }
     }
 
-    fn define(&mut self, name: String, value: LoxObject) {
+    pub fn define(&mut self, name: String, value: LoxObject) {
         crate::lox::trace(format!(
             ">>> Inserted into environment name={} val={}",
             name,
@@ -449,10 +449,24 @@ impl AstPrinter for Environment {
 pub struct LoxCallable {
     arity: u8,
     env: Environment,
-    block: Box<Statement>,
+    block: Executable,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+enum Executable {
+    Block(Box<Statement>),
+    Native(fn(Vec<LoxObject>) -> Result<LoxObject, LoxError>),
 }
 
 impl LoxCallable {
+    pub fn native(arity: u8, f: fn(Vec<LoxObject>) -> Result<LoxObject, LoxError>) -> LoxCallable {
+        LoxCallable {
+            arity,
+            env: Environment::new(),
+            block: Executable::Native(f),
+        }
+    }
+
     fn try_from(lox: &mut Lox, object: LoxObject) -> Result<LoxCallable, LoxError> {
         fn err(lox: &mut Lox, object: LoxObject) -> Result<LoxCallable, LoxError> {
             Err(lox.runtime_error(
@@ -464,12 +478,10 @@ impl LoxCallable {
         match &object {
             // TODO: This is a total guess but I have a feeling we're heading somewhere like this
             LoxObject::Function(f) => Ok(f.clone()),
-            LoxObject::Object(vals) => {
-                match vals.get("__call") {
-                    Some(obj) => Self::try_from(lox, *(obj.clone())),
-                    None => err(lox, object),
-                }
-            }
+            LoxObject::Object(vals) => match vals.get("__call") {
+                Some(obj) => Self::try_from(lox, *(obj.clone())),
+                None => err(lox, object),
+            },
             _ => err(lox, object),
         }
     }
@@ -484,6 +496,9 @@ impl LoxCallable {
         args: Vec<LoxObject>,
     ) -> Result<LoxObject, LoxError> {
         // TODO: make new environment with args
-        self.block.clone().interpret(lox, &mut self.env)
+        match &self.block {
+            Executable::Block(st) => st.clone().interpret(lox, &mut self.env),
+            Executable::Native(f) => f(args),
+        }
     }
 }

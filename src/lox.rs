@@ -4,9 +4,12 @@
 use std::cmp::PartialEq;
 use std::collections::HashMap;
 
-use crate::interpreter::{AstPrinter, Environment, Interpreter};
-use crate::parser::{Expression, Parser};
+use crate::{builtins::clock, parser::{Expression, Parser}};
 use crate::scanner::{Literal, Scanner, Token, TokenType};
+use crate::{
+    interpreter::{AstPrinter, Environment, Interpreter},
+    parser::LoxObject,
+};
 
 pub type LineNumber = u16; // 64K lines
 pub type FileLocation = usize; // 4G chars
@@ -76,6 +79,14 @@ pub struct Lox {
     pub had_error: bool,
     pub had_runtime_error: bool,
     pub reserved_words: HashMap<String, TokenType>,
+}
+
+fn global_environment() -> Environment {
+    let mut env = Environment::new();
+
+    env.define("clock".to_owned(), clock());
+
+    env
 }
 
 impl Lox {
@@ -181,7 +192,7 @@ impl Lox {
 
         // TODO: maybe this should be structured so Lox doesn't need
         // to know what an environment is?
-        let environment = &mut Environment::new();
+        let mut environment = global_environment();
 
         for statement in statements {
             if TRACE {
@@ -190,7 +201,7 @@ impl Lox {
                     environment.to_string()
                 );
             }
-            statement.interpret(self, environment);
+            statement.interpret(self, &mut environment);
             if TRACE {
                 println!(
                     ">>> Environment after statement env={}",

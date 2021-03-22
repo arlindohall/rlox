@@ -165,11 +165,11 @@ impl Scanner {
         }
     }
 
-    pub fn scan_tokens(&mut self, lox: &mut Lox) -> Result<Vec<Token>, LoxError> {
+    pub fn scan_tokens(&mut self) -> Result<Vec<Token>, LoxError> {
         let mut tokens = Vec::new();
         while !self.is_at_end() {
             self.start = self.next;
-            let result = self.scan_token(lox);
+            let result = self.scan_token();
 
             if let ScanResult::Token(token) = result {
                 tokens.push(token);
@@ -191,7 +191,7 @@ impl Scanner {
     // TODO: I don't like passing lox in, I'd rather find a better way to
     // implement what Bob calls separation of the code that reports errors from
     // the code that handles errors
-    fn scan_token(&mut self, lox: &mut Lox) -> ScanResult {
+    fn scan_token(&mut self) -> ScanResult {
         self.col += 1;
         let c = self.advance();
         // println!("Scanning token starting at c={}", c);
@@ -259,18 +259,18 @@ impl Scanner {
                 self.col = 1;
                 return ScanResult::Empty;
             }
-            "\"" => self.string(lox),
+            "\"" => self.string(),
             _ => {
                 // Borrow c again as immutable to avoid reference error
                 let c = self.prev();
                 if self.is_digit(&c) {
-                    self.number(lox)
+                    self.number()
                 } else if self.is_alpha(&c) {
-                    self.identifier(lox)
+                    self.identifier()
                 } else {
                     let message = format!("unexpected character '{}' at [col={}]", c, self.col);
                     let err =
-                        lox.scan_error(self.line, LoxErrorType::UnexpectedCharacter, &message);
+                        crate::lox::scan_error(self.line, LoxErrorType::UnexpectedCharacter, &message);
                     // ScanResult::Error(err)
                     return ScanResult::Empty;
                 }
@@ -362,7 +362,7 @@ impl Scanner {
         return self.is_digit(c) || self.is_alpha(c);
     }
 
-    fn string(&mut self, lox: &mut Lox) -> Token {
+    fn string(&mut self) -> Token {
         // println!("Scanning string starting at c={}{}", self.prev(), self.peek());
         loop {
             if self.is_at_end() {
@@ -384,7 +384,7 @@ impl Scanner {
         // mode and didn't have another character after the end of the string,
         // i.e. > "a"
         if self.is_at_end() && !(self.prev() == "\"" && self.next > self.start) {
-            lox.scan_error(
+            crate::lox::scan_error(
                 self.line,
                 LoxErrorType::UnterminatedString,
                 "unterminated string",
@@ -404,7 +404,7 @@ impl Scanner {
         }
     }
 
-    fn number(&mut self, _lox: &mut Lox) -> Token {
+    fn number(&mut self) -> Token {
         loop {
             let c = self.peek();
             // println!("Looking for number c={}", c);
@@ -437,7 +437,7 @@ impl Scanner {
         }
     }
 
-    fn identifier(&mut self, lox: &mut Lox) -> Token {
+    fn identifier(&mut self) -> Token {
         loop {
             if self.is_alpha_numeric(self.peek()) {
                 self.advance();
@@ -447,7 +447,7 @@ impl Scanner {
         }
 
         let lexeme = self.lexeme();
-        if let Some(token_type) = lox.reserved_words.get(&lexeme) {
+        if let Some(token_type) = crate::lox::reserved(&lexeme) {
             let token_type = token_type.to_owned();
             Token {
                 token_type,

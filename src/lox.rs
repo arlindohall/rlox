@@ -18,11 +18,50 @@ pub type LineNumber = u16; // 64K lines
 pub type FileLocation = usize; // 4G chars
 pub type LoxNumber = f64; // Numbers are floats, can be improved
 
-static TRACE: bool = false;
+
+type ReservedWord = (&'static str, TokenType);
+
+pub static TRACE: bool = false;
+
+static mut HAD_ERROR: bool = false;
+static mut HAD_RUNTIME_ERROR: bool = false;
+
+static RESERVED_WORDS: [ReservedWord; 16] = [
+    ("and", TokenType::And),
+    ("class", TokenType::Class),
+    ("else", TokenType::Else),
+    ("false", TokenType::False),
+    ("for", TokenType::For),
+    ("fun", TokenType::Fun),
+    ("if", TokenType::If),
+    ("nil", TokenType::Nil),
+    ("or", TokenType::Or),
+    ("print", TokenType::Print),
+    ("return", TokenType::Return),
+    ("super", TokenType::Super),
+    ("this", TokenType::This),
+    ("true", TokenType::True),
+    ("var", TokenType::Var),
+    ("while", TokenType::While)
+];
+
+fn global_map() -> HashMap<String, TokenType> {
+    HashMap::new()
+}
 
 pub fn trace(message: String) {
     if TRACE {
         println!("{}", message);
+    }
+}
+
+/*
+ * Gross gross gross gross gross gross gross
+ */
+pub fn clear_errors() {
+    unsafe {
+        HAD_ERROR = false;
+        HAD_RUNTIME_ERROR = false;
     }
 }
 
@@ -81,11 +120,90 @@ pub enum LoxErrorType {
     SystemError,
 }
 
-pub struct Lox {
-    pub had_error: bool,
-    pub had_runtime_error: bool,
-    pub reserved_words: HashMap<String, TokenType>,
+pub fn had_error() -> bool {
+    unsafe {
+        HAD_ERROR
+    }
 }
+
+pub fn had_runtime_error() -> bool {
+    unsafe {
+        HAD_RUNTIME_ERROR
+    }
+}
+
+pub fn scan_error(
+    line: LineNumber,
+    err_type: LoxErrorType,
+    message: &str,
+) -> LoxError {
+    println!("[line={}] ScanError ({:?}): {}", line, err_type, message);
+    unsafe {
+        HAD_ERROR = true;
+    }
+
+    LoxError::ScanError {
+        message: String::from(message),
+        err_type,
+        line,
+    }
+}
+
+pub fn parse_error(token: Token, err_type: LoxErrorType, message: &str) -> LoxError {
+    if token.token_type == TokenType::Eof {
+        println!(
+            "[line={}] ParseError ({:?} at end): {}",
+            token.line, err_type, message
+        );
+    } else {
+        println!(
+            "[line={}] ParseError ({:?} at `{}`): {}",
+            token.line, err_type, token.lexeme, message
+        );
+    }
+    unsafe {
+        HAD_ERROR = true;
+    }
+
+    LoxError::ParseError {
+        message: String::from(message),
+        cause: token,
+        err_type,
+    }
+}
+
+pub fn runtime_error(
+    expression: Expression,
+    err_type: LoxErrorType,
+    message: &str,
+) -> LoxError {
+    println!(
+        "RuntimeError ({:?} at `{}`): {}",
+        err_type,
+        expression.to_string(),
+        message
+    );
+    unsafe {
+        HAD_RUNTIME_ERROR = true;
+    }
+
+    LoxError::RuntimeError {
+        message: String::from(message),
+        cause: expression,
+        err_type,
+    }
+}
+
+pub fn reserved(name: &str) -> Option<TokenType> {
+    for word in RESERVED_WORDS.iter() {
+        if word.0 == name {
+            return Some(word.1.clone())
+        }
+    }
+    None
+}
+
+pub struct Lox {}
 
 fn global_environment() -> Environment {
     let mut env = Environment::new();
@@ -96,105 +214,11 @@ fn global_environment() -> Environment {
 }
 
 impl Lox {
-    pub fn new() -> Lox {
-        let mut lox = Lox {
-            had_error: false,
-            had_runtime_error: false,
-            reserved_words: HashMap::new(),
-        };
-
-        lox.reserved_words.insert("and".to_owned(), TokenType::And);
-        lox.reserved_words
-            .insert("class".to_owned(), TokenType::Class);
-        lox.reserved_words
-            .insert("else".to_owned(), TokenType::Else);
-        lox.reserved_words
-            .insert("false".to_owned(), TokenType::False);
-        lox.reserved_words.insert("for".to_owned(), TokenType::For);
-        lox.reserved_words.insert("fun".to_owned(), TokenType::Fun);
-        lox.reserved_words.insert("if".to_owned(), TokenType::If);
-        lox.reserved_words.insert("nil".to_owned(), TokenType::Nil);
-        lox.reserved_words.insert("or".to_owned(), TokenType::Or);
-        lox.reserved_words
-            .insert("print".to_owned(), TokenType::Print);
-        lox.reserved_words
-            .insert("return".to_owned(), TokenType::Return);
-        lox.reserved_words
-            .insert("super".to_owned(), TokenType::Super);
-        lox.reserved_words
-            .insert("this".to_owned(), TokenType::This);
-        lox.reserved_words
-            .insert("true".to_owned(), TokenType::True);
-        lox.reserved_words.insert("var".to_owned(), TokenType::Var);
-        lox.reserved_words
-            .insert("while".to_owned(), TokenType::While);
-
-        lox
-    }
-
-    pub fn scan_error(
-        &mut self,
-        line: LineNumber,
-        err_type: LoxErrorType,
-        message: &str,
-    ) -> LoxError {
-        println!("[line={}] ScanError ({:?}): {}", line, err_type, message);
-        self.had_error = true;
-
-        LoxError::ScanError {
-            message: String::from(message),
-            err_type,
-            line,
-        }
-    }
-
-    pub fn parse_error(&mut self, token: Token, err_type: LoxErrorType, message: &str) -> LoxError {
-        if token.token_type == TokenType::Eof {
-            println!(
-                "[line={}] ParseError ({:?} at end): {}",
-                token.line, err_type, message
-            );
-        } else {
-            println!(
-                "[line={}] ParseError ({:?} at `{}`): {}",
-                token.line, err_type, token.lexeme, message
-            );
-        }
-        self.had_error = true;
-
-        LoxError::ParseError {
-            message: String::from(message),
-            cause: token,
-            err_type,
-        }
-    }
-
-    pub fn runtime_error(
-        &mut self,
-        expression: Expression,
-        err_type: LoxErrorType,
-        message: &str,
-    ) -> LoxError {
-        println!(
-            "RuntimeError ({:?} at `{}`): {}",
-            err_type,
-            expression.to_string(),
-            message
-        );
-        self.had_runtime_error = true;
-
-        LoxError::RuntimeError {
-            message: String::from(message),
-            cause: expression,
-            err_type,
-        }
-    }
-
-    pub fn run(&mut self, snippet: String) -> Result<(), LoxError> {
+    pub fn run(&self, snippet: String) -> Result<(), LoxError> {
         let mut scanner = Scanner::new(snippet);
-        let tokens = scanner.scan_tokens(self)?;
+        let tokens = scanner.scan_tokens()?;
         let mut parser = Parser::new(tokens);
-        let statements = parser.parse(self)?;
+        let statements = parser.parse()?;
 
         // TODO: maybe this should be structured so Lox doesn't need
         // to know what an environment is?
@@ -207,7 +231,7 @@ impl Lox {
                     environment.to_string()
                 );
             }
-            statement.interpret(self, &mut environment);
+            statement.interpret(&mut environment);
             if TRACE {
                 println!(
                     ">>> Environment after statement env={}",

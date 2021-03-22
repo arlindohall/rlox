@@ -9,7 +9,7 @@ use rlox::lox::Lox;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<String> = std::env::args().collect();
-    let mut lox = Lox::new();
+    let lox = Lox{};
 
     /*
     The book has two methods, run_file and run_prompt, that handle two
@@ -30,9 +30,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         File::open(name)?.read_to_string(&mut contents)?;
 
         lox.run(contents);
-        if lox.had_error {
+        if rlox::lox::had_error() {
             std::process::exit(65);
-        } else if lox.had_runtime_error {
+        } else if rlox::lox::had_runtime_error() {
             std::process::exit(70);
         }
     } else {
@@ -43,7 +43,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         for line in lock.lines() {
             // TODO: Better error handling here, probably addressed in book
             lox.run(line?);
-            lox.had_error = false;
+            rlox::lox::clear_errors();
         }
         println!("Go Tigers!");
     }

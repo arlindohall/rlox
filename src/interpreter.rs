@@ -468,7 +468,7 @@ impl PartialEq for LoxCallable {
 
 #[derive(Clone)]
 enum Executable {
-    Block(Box<Statement>),
+    Interpreted(Box<Statement>, Vec<String>),
     Native(fn(&mut Lox, Vec<LoxObject>) -> Result<LoxObject, LoxError>),
 }
 
@@ -511,7 +511,20 @@ impl LoxCallable {
     ) -> Result<LoxObject, LoxError> {
         // TODO: make new environment with args
         match &self.block {
-            Executable::Block(st) => st.clone().interpret(lox, &mut self.env),
+            Executable::Interpreted(body, names) => {
+                let original = std::mem::replace(&mut self.env, Environment::new());
+                let mut wrapper = Environment::extend(original);
+
+                names.iter()
+                        .enumerate()
+                        .for_each(|(i, x)| wrapper.define(x.to_owned(), args[i].clone()));
+
+                let result = body.clone().interpret(lox, &mut wrapper);
+
+                std::mem::replace(&mut self.env, *wrapper.enclosing.unwrap());
+
+                result
+            }
             Executable::Native(f) => f(lox, args),
         }
     }

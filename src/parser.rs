@@ -246,7 +246,9 @@ impl Parser {
     }
 
     fn statement(&mut self, lox: &mut Lox) -> Result<Statement, LoxError> {
-        if self.match_token(TokenType::If) {
+        if self.match_token(TokenType::For) {
+            self.for_statement(lox)
+        } else if self.match_token(TokenType::If) {
             self.if_statement(lox)
         } else if self.match_token(TokenType::Print) {
             self.print_statement(lox)
@@ -258,6 +260,53 @@ impl Parser {
         } else {
             self.expression_statement(lox)
         }
+    }
+
+    fn for_statement(&mut self, lox: &mut Lox) -> Result<Statement, LoxError> {
+        self.consume(lox, TokenType::LeftParen, "expect '(' after 'for'");
+
+        let initializer = if self.match_token(TokenType::Semicolon) {
+            Statement::None
+        } else if self.match_token(TokenType::Var) {
+            self.var_declaration(lox)?
+        } else {
+            self.expression_statement(lox)?
+        };
+
+        let condition = if self.match_token(TokenType::Semicolon) {
+            None
+        } else {
+            let cond = self.expression(lox)?;
+            self.consume(lox, TokenType::Semicolon, "expect ';' after for condition")?;
+            Some(cond)
+        };
+
+        let increment = if self.match_token(TokenType::RightParen) {
+            None
+        } else {
+            let inc = self.expression(lox)?;
+            self.consume(lox, TokenType::RightParen, "expect ')' after for increment clause")?;
+            Some(inc)
+        };
+
+        let mut body = self.statement(lox)?;
+
+        body = match increment {
+            Some(inc) => Statement::Block(vec![body, Statement::Expression(inc)]),
+            None => body
+        };
+
+        body = match condition {
+            Some(cond) => Statement::While(cond, Box::new(body)),
+            None => Statement::While(Expression::Literal(LoxObject::Boolean(true)), Box::new(body)),
+        };
+
+        body = match initializer {
+            Statement::None => body,
+            _ => Statement::Block(vec![initializer, body]),
+        };
+
+        Ok(body)
     }
 
     fn while_statement(&mut self, lox: &mut Lox) -> Result<Statement, LoxError> {

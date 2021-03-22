@@ -29,7 +29,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
         match lox.run(contents) {
             Ok(_) => (),
-            Err(_) => todo!()
+            Err(e) => println!("continuing after error: {}", e.to_string())
         }
         if rlox::lox::had_error() {
             std::process::exit(65);
@@ -45,7 +45,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             // TODO: Better error handling here, probably addressed in book
             match lox.run(line?) {
                 Ok(_) => (),
-                Err(_) => todo!()
+                Err(e) => println!("Error: {}", e.to_string())
             };
             rlox::lox::clear_errors();
         }

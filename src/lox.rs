@@ -74,7 +74,7 @@ pub enum LoxError {
 }
 
 impl LoxError {
-    fn _to_string(&self) -> String {
+    pub fn to_string(&self) -> String {
         let err_type = match self {
             LoxError::ScanError { err_type, .. } => err_type,
             LoxError::ParseError { err_type, .. } => err_type,

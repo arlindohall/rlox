@@ -1,9 +1,7 @@
-// Ignore while building
-#![ allow( dead_code, unused_imports, unused_variables, unused_must_use ) ]
 
-use std::{borrow::Borrow, collections::HashMap};
+use std::{collections::HashMap};
 
-use crate::lox::{Lox, LoxError, LoxErrorType, LoxNumber};
+use crate::lox::{LoxError, LoxErrorType};
 use crate::parser::{Expression, LoxObject, Statement};
 use crate::scanner::{Token, TokenType};
 
@@ -230,7 +228,7 @@ impl Interpreter for Expression {
                     environment.to_string()
                 ));
                 let result = value.clone().interpret(environment)?;
-                environment.assign(*value, name, result.clone());
+                environment.assign(*value, name, result.clone())?;
                 crate::lox::trace(format!(
                     ">>> Done modifying environment={}",
                     environment.to_string()
@@ -249,7 +247,7 @@ impl Interpreter for Expression {
                     r.interpret(environment)
                 }
             }
-            Expression::Call(callee, paren, args) => {
+            Expression::Call(callee, _paren, args) => {
                 crate::lox::trace(format!(
                     ">>> Calling function with environment={}",
                     environment.to_string()
@@ -323,7 +321,7 @@ impl Interpreter for Statement {
                     last = statement.interpret(&mut block)?;
                 }
 
-                std::mem::replace(environment, *block.enclosing.unwrap());
+                *environment = *block.enclosing.unwrap();
                 Ok(last)
             }
             Statement::If(cond, then_st, else_st) => {
@@ -392,9 +390,9 @@ impl Environment {
         ));
     }
 
-    fn define_global(&mut self, name: String, value: LoxObject) {
+    fn _define_global(&mut self, name: String, value: LoxObject) {
         match &mut self.enclosing {
-            Some(env) => env.define_global(name, value),
+            Some(env) => env._define_global(name, value),
             None => {
                 self.values.insert(name, value);
             }
@@ -440,7 +438,7 @@ impl Environment {
             self.values.insert(name.lexeme, value);
             Ok(())
         } else if let Some(environ) = &mut self.enclosing {
-            environ.assign(expression, name, value);
+            environ.assign(expression, name, value)?;
             Ok(())
         } else {
             Err(crate::lox::runtime_error(
@@ -491,7 +489,7 @@ impl std::fmt::Debug for LoxCallable {
 // TODO: we could theoretically give each function some ID to track,
 // and compare equal if the ids are equal even though the two would be clones
 impl PartialEq for LoxCallable {
-    fn eq(&self, other: &Self) -> bool {
+    fn eq(&self, _other: &Self) -> bool {
         false
     }
 }
@@ -573,7 +571,7 @@ impl LoxCallable {
                     result = statement.clone().interpret(&mut wrapper)?;
                 }
 
-                std::mem::replace(env, *wrapper.enclosing.unwrap());
+                *env = *wrapper.enclosing.unwrap();
 
                 Ok(result)
             }

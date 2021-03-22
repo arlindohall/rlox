@@ -1,5 +1,3 @@
-// Ignore while building
-#![ allow( dead_code, unused_imports, unused_variables, unused_must_use ) ]
 
 extern crate unicode_segmentation;
 
@@ -7,7 +5,7 @@ use std::str::FromStr;
 
 use unicode_segmentation::UnicodeSegmentation;
 
-use crate::lox::{FileLocation, LineNumber, Lox, LoxError, LoxErrorType, LoxNumber};
+use crate::lox::{FileLocation, LineNumber, LoxError, LoxErrorType, LoxNumber};
 
 /*******************************************************************************
 ********************************************************************************
@@ -122,7 +120,7 @@ pub struct Token {
 }
 
 impl Token {
-    fn to_string(&self) -> String {
+    fn _to_string(&self) -> String {
         format!(
             "Token(token_type={:?}, lexeme=\"{}\", literal={})",
             self.token_type,
@@ -271,8 +269,7 @@ impl Scanner {
                     let message = format!("unexpected character '{}' at [col={}]", c, self.col);
                     let err =
                         crate::lox::scan_error(self.line, LoxErrorType::UnexpectedCharacter, &message);
-                    // ScanResult::Error(err)
-                    return ScanResult::Empty;
+                    return ScanResult::Error(err);
                 }
             }
         };

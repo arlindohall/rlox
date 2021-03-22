@@ -1,12 +1,10 @@
-// Ignore while building
-#![ allow( dead_code, unused_imports, unused_variables, unused_must_use ) ]
 
 use std::collections::HashMap;
 
-use crate::scanner::{Literal, Token, TokenType};
+use crate::scanner::{Token, TokenType};
 use crate::{
     interpreter::LoxCallable,
-    lox::{FileLocation, Lox, LoxError, LoxErrorType, LoxNumber},
+    lox::{FileLocation, LoxError, LoxErrorType, LoxNumber},
 };
 
 /*******************************************************************************
@@ -253,12 +251,12 @@ impl Parser {
         self.consume(
             TokenType::RightParen,
             &format!("expected ')' after {} parameters", kind),
-        );
+        )?;
 
         self.consume(
             TokenType::LeftBrace,
             &format!("expect '{{' before {} body", kind),
-        );
+        )?;
         let body = self.block()?;
         Ok(Statement::Function(name, params, body))
     }
@@ -275,17 +273,17 @@ impl Parser {
         self.consume(
             TokenType::Semicolon,
             "expected semicolon after variable declaration",
-        );
+        )?;
         Ok(Statement::Var(name, initializer))
     }
 
-    fn handle_declaration_err(
+    fn _handle_declaration_err(
         &mut self,
         result: Result<Statement, LoxError>,
     ) -> Result<Statement, LoxError> {
         match result {
             Ok(stmt) => Ok(stmt),
-            Err(err) => {
+            Err(_err) => {
                 self.synchronize();
                 Ok(Statement::None)
             }
@@ -310,7 +308,7 @@ impl Parser {
     }
 
     fn for_statement(&mut self) -> Result<Statement, LoxError> {
-        self.consume(TokenType::LeftParen, "expect '(' after 'for'");
+        self.consume(TokenType::LeftParen, "expect '(' after 'for'")?;
 
         let initializer = if self.match_token(TokenType::Semicolon) {
             Statement::None
@@ -363,21 +361,21 @@ impl Parser {
     }
 
     fn while_statement(&mut self) -> Result<Statement, LoxError> {
-        self.consume(TokenType::LeftParen, "expect '(' after 'while'");
+        self.consume(TokenType::LeftParen, "expect '(' after 'while'")?;
         let condition = self.expression()?;
         self.consume(
             TokenType::RightParen,
             "expect ')' after while condition",
-        );
+        )?;
         let body = self.statement()?;
 
         Ok(Statement::While(condition, Box::new(body)))
     }
 
     fn if_statement(&mut self) -> Result<Statement, LoxError> {
-        self.consume(TokenType::LeftParen, "expect '(' after 'if'");
+        self.consume(TokenType::LeftParen, "expect '(' after 'if'")?;
         let condition = self.expression()?;
-        self.consume(TokenType::RightParen, "expect ')' after if condition");
+        self.consume(TokenType::RightParen, "expect ')' after if condition")?;
 
         let then_statement = Box::new(self.statement()?);
         let else_statement = if self.match_token(TokenType::Else) {
@@ -391,7 +389,7 @@ impl Parser {
 
     fn print_statement(&mut self) -> Result<Statement, LoxError> {
         let value = self.expression()?;
-        self.consume(TokenType::Semicolon, "expect ';' after value");
+        self.consume(TokenType::Semicolon, "expect ';' after value")?;
         Ok(Statement::Print(value))
     }
 
@@ -402,13 +400,13 @@ impl Parser {
             statements.push(self.declaration()?);
         }
 
-        self.consume(TokenType::RightBrace, "expect '}' after block");
+        self.consume(TokenType::RightBrace, "expect '}' after block")?;
         Ok(statements)
     }
 
     fn expression_statement(&mut self) -> Result<Statement, LoxError> {
         let expr = self.expression()?;
-        self.consume(TokenType::Semicolon, "expect ';' after statement");
+        self.consume(TokenType::Semicolon, "expect ';' after statement")?;
         Ok(Statement::Expression(expr))
     }
 
@@ -421,7 +419,7 @@ impl Parser {
 
         // If this is an assignment, parse the RHS as a normal expression
         if self.match_token(TokenType::Equal) {
-            let equals = self.previous();
+            let _equals = self.previous();
             let value = self.assignment()?;
 
             // If the left hand side is a valid assignment target, make the assignment

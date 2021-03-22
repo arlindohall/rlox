@@ -1,5 +1,3 @@
-// Ignore while building
-#![allow(dead_code, unused_imports, unused_variables, unused_must_use)]
 
 use std::error::Error;
 use std::fs::File;
@@ -29,7 +27,10 @@ fn main() -> Result<(), Box<dyn Error>> {
         let name = &args[1];
         File::open(name)?.read_to_string(&mut contents)?;
 
-        lox.run(contents);
+        match lox.run(contents) {
+            Ok(_) => (),
+            Err(_) => todo!()
+        }
         if rlox::lox::had_error() {
             std::process::exit(65);
         } else if rlox::lox::had_runtime_error() {
@@ -42,7 +43,10 @@ fn main() -> Result<(), Box<dyn Error>> {
 
         for line in lock.lines() {
             // TODO: Better error handling here, probably addressed in book
-            lox.run(line?);
+            match lox.run(line?) {
+                Ok(_) => (),
+                Err(_) => todo!()
+            };
             rlox::lox::clear_errors();
         }
         println!("Go Tigers!");

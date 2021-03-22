@@ -1,17 +1,11 @@
-// Ignore while building
-#![ allow( dead_code, unused_imports, unused_variables, unused_must_use ) ]
 
-use std::cmp::PartialEq;
-use std::collections::HashMap;
-
-use crate::scanner::{Literal, Scanner, Token, TokenType};
+use crate::scanner::{Scanner, Token, TokenType};
 use crate::{
     builtins::clock,
     parser::{Expression, Parser},
 };
 use crate::{
     interpreter::{AstPrinter, Environment, Interpreter},
-    parser::LoxObject,
 };
 
 pub type LineNumber = u16; // 64K lines
@@ -44,10 +38,6 @@ static RESERVED_WORDS: [ReservedWord; 16] = [
     ("var", TokenType::Var),
     ("while", TokenType::While)
 ];
-
-fn global_map() -> HashMap<String, TokenType> {
-    HashMap::new()
-}
 
 pub fn trace(message: String) {
     if TRACE {
@@ -84,7 +74,7 @@ pub enum LoxError {
 }
 
 impl LoxError {
-    fn to_string(&self) -> String {
+    fn _to_string(&self) -> String {
         let err_type = match self {
             LoxError::ScanError { err_type, .. } => err_type,
             LoxError::ParseError { err_type, .. } => err_type,
@@ -231,7 +221,7 @@ impl Lox {
                     environment.to_string()
                 );
             }
-            statement.interpret(&mut environment);
+            statement.interpret(&mut environment)?;
             if TRACE {
                 println!(
                     ">>> Environment after statement env={}",

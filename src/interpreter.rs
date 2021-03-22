@@ -251,6 +251,10 @@ impl Interpreter for Expression {
                 }
             }
             Expression::Call(callee, paren, args) => {
+                crate::lox::trace(format!(
+                    ">>> Calling function with environment={}",
+                    environment.to_string()
+                ));
                 let callee_obj = callee.clone().interpret(lox, environment)?;
 
                 let mut arguments = Vec::new();
@@ -270,7 +274,7 @@ impl Interpreter for Expression {
                         ),
                     ))
                 } else {
-                    func.call_lox_func(lox, arguments)
+                    func.call_lox_func(lox, arguments, environment)
                 }
             }
         }
@@ -346,11 +350,8 @@ impl Interpreter for Statement {
                 let params = params.iter().map(|param| param.lexeme.to_owned()).collect();
                 // TODO: This is pretty weird, cloning the environment, might need something
                 // more sophisticated where we manage environment trees dynamically
-                let func = LoxObject::Function(LoxCallable::interpreted(
-                    params,
-                    body,
-                    environment.clone(),
-                ));
+                let func =
+                    LoxObject::Function(LoxCallable::interpreted(params, body, Environment::new()));
                 environment.define(name.lexeme, func);
                 Ok(LoxObject::Nil)
             }
@@ -470,6 +471,14 @@ impl AstPrinter for Environment {
     }
 }
 
+/*
+ * For now, I'm using dynamic scope because it's possible to implement it and
+ * I have no way to extend a scope with two parents. The lox implementation of
+ * the book extends the global variables with a new scope containing only the
+ * funciton arguments, but I'm not sure how the function names for recursive
+ * definitions work in that case?? Whatever... I'm not worried about it. I can
+ * come back to it later.
+ */
 #[derive(Clone)]
 pub struct LoxCallable {
     arity: u8,
@@ -544,11 +553,12 @@ impl LoxCallable {
         &mut self,
         lox: &mut Lox,
         args: Vec<LoxObject>,
+        env: &mut Environment,
     ) -> Result<LoxObject, LoxError> {
         match &self.exec {
             Executable::Interpreted(body, names) => {
-                let original = std::mem::replace(&mut self.env, Environment::new());
-                let mut wrapper = Environment::extend(original);
+                let caller = std::mem::replace(env, Environment::new());
+                let mut wrapper = Environment::extend(caller);
 
                 names.iter().enumerate().for_each(|(i, x)| {
                     // Here we guard against calling with different length args and
@@ -568,7 +578,7 @@ impl LoxCallable {
                     result = statement.clone().interpret(lox, &mut wrapper)?;
                 }
 
-                std::mem::replace(&mut self.env, *wrapper.enclosing.unwrap());
+                std::mem::replace(env, *wrapper.enclosing.unwrap());
 
                 Ok(result)
             }

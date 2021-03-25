@@ -20,7 +20,7 @@ pub static TRACE: bool = false;
 static mut HAD_ERROR: bool = false;
 static mut HAD_RUNTIME_ERROR: bool = false;
 
-static RESERVED_WORDS: [ReservedWord; 16] = [
+static RESERVED_WORDS: &[ReservedWord] = &[
     ("and", TokenType::And),
     ("class", TokenType::Class),
     ("else", TokenType::Else),

@@ -1,4 +1,3 @@
-
 extern crate unicode_segmentation;
 
 use std::str::FromStr;
@@ -267,8 +266,11 @@ impl Scanner {
                     self.identifier()
                 } else {
                     let message = format!("unexpected character '{}' at [col={}]", c, self.col);
-                    let err =
-                        crate::lox::scan_error(self.line, LoxErrorType::UnexpectedCharacter, &message);
+                    let err = crate::lox::scan_error(
+                        self.line,
+                        LoxErrorType::UnexpectedCharacter,
+                        &message,
+                    );
                     return ScanResult::Error(err);
                 }
             }

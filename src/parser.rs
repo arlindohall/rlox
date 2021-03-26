@@ -1,4 +1,3 @@
-
 use std::collections::HashMap;
 
 use crate::scanner::{Token, TokenType};
@@ -239,10 +238,7 @@ impl Parser {
                         &format!("{} cannot have more than 255 parameters", kind),
                     ));
                 } else {
-                    params.push(self.consume(
-                        TokenType::Identifier,
-                        "expected parameter name",
-                    )?)
+                    params.push(self.consume(TokenType::Identifier, "expected parameter name")?)
                 }
                 if !self.match_token(TokenType::Comma) {
                     break;
@@ -303,8 +299,7 @@ impl Parser {
         } else if self.match_token(TokenType::While) {
             self.while_statement()
         } else if self.match_token(TokenType::LeftBrace) {
-            self.block()
-                .map(|statements| Statement::Block(statements))
+            self.block().map(|statements| Statement::Block(statements))
         } else {
             self.expression_statement()
         }
@@ -366,10 +361,7 @@ impl Parser {
     fn while_statement(&mut self) -> Result<Statement, LoxError> {
         self.consume(TokenType::LeftParen, "expect '(' after 'while'")?;
         let condition = self.expression()?;
-        self.consume(
-            TokenType::RightParen,
-            "expect ')' after while condition",
-        )?;
+        self.consume(TokenType::RightParen, "expect ')' after while condition")?;
         let body = self.statement()?;
 
         Ok(Statement::While(condition, Box::new(body)))
@@ -609,19 +601,23 @@ impl Parser {
         } else {
             let cause = self.peek();
             let message = "expected expression";
-            Err(crate::lox::parse_error(cause, LoxErrorType::ExpressionError, message))
+            Err(crate::lox::parse_error(
+                cause,
+                LoxErrorType::ExpressionError,
+                message,
+            ))
         }
     }
 
-    fn consume(
-        &mut self,
-        token_type: TokenType,
-        message: &str,
-    ) -> Result<Token, LoxError> {
+    fn consume(&mut self, token_type: TokenType, message: &str) -> Result<Token, LoxError> {
         if self.check(token_type) {
             Ok(self.advance())
         } else {
-            Err(crate::lox::parse_error(self.peek(), LoxErrorType::IncompleteExpression, message))
+            Err(crate::lox::parse_error(
+                self.peek(),
+                LoxErrorType::IncompleteExpression,
+                message,
+            ))
         }
     }
 

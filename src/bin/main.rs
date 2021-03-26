@@ -1,4 +1,3 @@
-
 use std::error::Error;
 use std::fs::File;
 use std::io::{BufRead, Read};
@@ -7,7 +6,7 @@ use rlox::lox::Lox;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<String> = std::env::args().collect();
-    let lox = Lox{};
+    let lox = Lox {};
 
     /*
     The book has two methods, run_file and run_prompt, that handle two
@@ -29,7 +28,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
         match lox.run(contents) {
             Ok(_) => (),
-            Err(e) => println!("continuing after error: {}", e.to_string())
+            Err(e) => println!("continuing after error: {}", e.to_string()),
         }
         if rlox::lox::had_error() {
             std::process::exit(65);
@@ -45,7 +44,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             // TODO: Better error handling here, probably addressed in book
             match lox.run(line?) {
                 Ok(_) => (),
-                Err(e) => println!("Error: {}", e.to_string())
+                Err(e) => println!("Error: {}", e.to_string()),
             };
             rlox::lox::clear_errors();
         }

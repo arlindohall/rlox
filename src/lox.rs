@@ -1,17 +1,16 @@
-
-use crate::{parser::LoxObject, scanner::{Scanner, Token, TokenType}};
+use crate::interpreter::{AstPrinter, Environment, Interpreter};
 use crate::{
     builtins::clock,
     parser::{Expression, Parser},
 };
 use crate::{
-    interpreter::{AstPrinter, Environment, Interpreter},
+    parser::LoxObject,
+    scanner::{Scanner, Token, TokenType},
 };
 
 pub type LineNumber = u16; // 64K lines
 pub type FileLocation = usize; // 4G chars
 pub type LoxNumber = f64; // Numbers are floats, can be improved
-
 
 type ReservedWord = (&'static str, TokenType);
 
@@ -36,7 +35,7 @@ static RESERVED_WORDS: &[ReservedWord] = &[
     ("this", TokenType::This),
     ("true", TokenType::True),
     ("var", TokenType::Var),
-    ("while", TokenType::While)
+    ("while", TokenType::While),
 ];
 
 pub fn trace(message: String) {
@@ -73,7 +72,7 @@ pub enum LoxError {
     },
     ReturnPseudoError {
         value: LoxObject,
-    }
+    },
 }
 
 impl LoxError {
@@ -116,22 +115,14 @@ pub enum LoxErrorType {
 }
 
 pub fn had_error() -> bool {
-    unsafe {
-        HAD_ERROR
-    }
+    unsafe { HAD_ERROR }
 }
 
 pub fn had_runtime_error() -> bool {
-    unsafe {
-        HAD_RUNTIME_ERROR
-    }
+    unsafe { HAD_RUNTIME_ERROR }
 }
 
-pub fn scan_error(
-    line: LineNumber,
-    err_type: LoxErrorType,
-    message: &str,
-) -> LoxError {
+pub fn scan_error(line: LineNumber, err_type: LoxErrorType, message: &str) -> LoxError {
     println!("[line={}] ScanError ({:?}): {}", line, err_type, message);
     unsafe {
         HAD_ERROR = true;
@@ -167,11 +158,7 @@ pub fn parse_error(token: Token, err_type: LoxErrorType, message: &str) -> LoxEr
     }
 }
 
-pub fn runtime_error(
-    expression: Expression,
-    err_type: LoxErrorType,
-    message: &str,
-) -> LoxError {
+pub fn runtime_error(expression: Expression, err_type: LoxErrorType, message: &str) -> LoxError {
     println!(
         "RuntimeError ({:?} at `{}`): {}",
         err_type,
@@ -192,7 +179,7 @@ pub fn runtime_error(
 pub fn reserved(name: &str) -> Option<TokenType> {
     for word in RESERVED_WORDS.iter() {
         if word.0 == name {
-            return Some(word.1.clone())
+            return Some(word.1.clone());
         }
     }
     None
@@ -211,7 +198,10 @@ impl Lox {
         // to know what an environment is?
         let environment = Environment::new();
         let clock = clock(environment.clone());
-        environment.clone().borrow_mut().define("clock".to_owned(), clock);
+        environment
+            .clone()
+            .borrow_mut()
+            .define("clock".to_owned(), clock);
 
         for statement in statements {
             if TRACE {

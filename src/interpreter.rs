@@ -347,7 +347,7 @@ impl Interpreter for Statement {
                 // TODO: when creating closures will have to do some unsafe wizardry
                 // in order for function environments to point back to the functions
                 let func =
-                    LoxObject::Function(LoxCallable::interpreted(params, body));
+                    LoxObject::Function(LoxCallable::interpreted(name.lexeme.clone(), params, body));
                 environment.define(name.lexeme, func);
                 Ok(LoxObject::Nil)
             }
@@ -486,11 +486,12 @@ pub struct LoxCallable {
     // TODO: Add environment to make true closures
     // env: Environment,
     exec: Executable,
+    name: String,
 }
 
 impl std::fmt::Debug for LoxCallable {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "<Function(arity={})>", self.arity)
+        write!(f, "{}", self.to_string())
     }
 }
 
@@ -510,17 +511,24 @@ enum Executable {
 
 impl LoxCallable {
     pub fn native(
+        name: String,
         arity: u8,
         f: fn(Vec<LoxObject>) -> Result<LoxObject, LoxError>,
     ) -> LoxCallable {
         LoxCallable {
             arity,
+            name,
             exec: Executable::Native(f),
         }
     }
 
-    pub fn interpreted(params: Vec<String>, body: Vec<Statement>) -> LoxCallable {
+    pub fn to_string(&self) -> String {
+        format!("<fn {}({})>", self.name, self.arity)
+    }
+
+    pub fn interpreted(name: String, params: Vec<String>, body: Vec<Statement>) -> LoxCallable {
         LoxCallable {
+            name,
             arity: params.len() as u8,
             exec: Executable::Interpreted(body, params),
         }

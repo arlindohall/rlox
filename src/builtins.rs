@@ -21,5 +21,5 @@ fn clock_impl(_args: Vec<LoxObject>) -> Result<LoxObject, LoxError> {
 }
 
 pub fn clock() -> LoxObject {
-    LoxObject::Function(LoxCallable::native(0, clock_impl))
+    LoxObject::Function(LoxCallable::native("clock".to_string(), 0, clock_impl))
 }

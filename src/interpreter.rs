@@ -344,10 +344,10 @@ impl Interpreter for Statement {
             }
             Statement::Function(name, params, body) => {
                 let params = params.iter().map(|param| param.lexeme.to_owned()).collect();
-                // TODO: This is pretty weird, cloning the environment, might need something
-                // more sophisticated where we manage environment trees dynamically
+                // TODO: when creating closures will have to do some unsafe wizardry
+                // in order for function environments to point back to the functions
                 let func =
-                    LoxObject::Function(LoxCallable::interpreted(params, body, Environment::new()));
+                    LoxObject::Function(LoxCallable::interpreted(params, body));
                 environment.define(name.lexeme, func);
                 Ok(LoxObject::Nil)
             }
@@ -483,7 +483,8 @@ impl AstPrinter for Environment {
 #[derive(Clone)]
 pub struct LoxCallable {
     arity: u8,
-    env: Environment,
+    // TODO: Add environment to make true closures
+    // env: Environment,
     exec: Executable,
 }
 
@@ -514,16 +515,14 @@ impl LoxCallable {
     ) -> LoxCallable {
         LoxCallable {
             arity,
-            env: Environment::new(),
             exec: Executable::Native(f),
         }
     }
 
-    pub fn interpreted(params: Vec<String>, body: Vec<Statement>, env: Environment) -> LoxCallable {
+    pub fn interpreted(params: Vec<String>, body: Vec<Statement>) -> LoxCallable {
         LoxCallable {
             arity: params.len() as u8,
             exec: Executable::Interpreted(body, params),
-            env,
         }
     }
 

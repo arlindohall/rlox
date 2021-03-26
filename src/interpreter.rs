@@ -272,7 +272,7 @@ impl Interpreter for Expression {
                         ),
                     ))
                 } else {
-                    func.call_lox_func(arguments, environment)
+                    func.call(arguments, environment)
                 }
             }
         }
@@ -551,7 +551,7 @@ impl LoxCallable {
         self.arity
     }
 
-    fn call_lox_func(
+    fn call(
         &mut self,
         args: Vec<LoxObject>,
         env: Rc<RefCell<Environment>>,

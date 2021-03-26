@@ -4,21 +4,24 @@ fun count(n) {
 }
 
 count(3);
+print count;
 
 fun sayHi(first, last) {
   print "Hi, " + first + " " + last + "!";
 }
 
 sayHi("Dear", "Reader");
+print sayHi;
 
 fun add(a, b, c) {
   print a + b + c;
 }
 
 add(1, 2, 3);
+print add;
 
 fun add(a, b) {
   print a + b;
 }
 
-print add; // "<fn add>".
+print add;

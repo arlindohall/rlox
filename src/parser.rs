@@ -126,7 +126,7 @@ impl LoxObject {
             LoxObject::Number(n) => format!("{}", n),
             // TODO: maybe actually print objects
             LoxObject::Object(_) => String::from("<Object>"),
-            LoxObject::Function(_) => String::from("<Function>"),
+            LoxObject::Function(callable) => callable.to_string(),
             LoxObject::Nil => String::from("nil"),
         }
     }

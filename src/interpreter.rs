@@ -523,7 +523,7 @@ impl LoxCallable {
     }
 
     pub fn to_string(&self) -> String {
-        format!("<fn {}({})>", self.name, self.arity)
+        format!("<fn {}(arity={})>", self.name, self.arity)
     }
 
     pub fn interpreted(name: String, params: Vec<String>, body: Vec<Statement>) -> LoxCallable {

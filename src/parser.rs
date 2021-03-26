@@ -154,6 +154,7 @@ pub enum Statement {
     If(Expression, Box<Statement>, Option<Box<Statement>>),
     Function(Token, Vec<Token>, Vec<Statement>),
     While(Expression, Box<Statement>),
+    Return(Token, Expression),
     None,
 }
 
@@ -297,6 +298,8 @@ impl Parser {
             self.if_statement()
         } else if self.match_token(TokenType::Print) {
             self.print_statement()
+        } else if self.match_token(TokenType::Return) {
+            self.return_statement()
         } else if self.match_token(TokenType::While) {
             self.while_statement()
         } else if self.match_token(TokenType::LeftBrace) {
@@ -391,6 +394,18 @@ impl Parser {
         let value = self.expression()?;
         self.consume(TokenType::Semicolon, "expect ';' after value")?;
         Ok(Statement::Print(value))
+    }
+
+    fn return_statement(&mut self) -> Result<Statement, LoxError> {
+        let keyword = self.previous();
+        let value = if self.check(TokenType::Semicolon) {
+            Expression::Literal(LoxObject::Nil)
+        } else {
+            self.expression()?
+        };
+
+        self.consume(TokenType::Semicolon, "expect ';' after return statement")?;
+        Ok(Statement::Return(keyword, value))
     }
 
     fn block(&mut self) -> Result<Vec<Statement>, LoxError> {

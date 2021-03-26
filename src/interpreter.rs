@@ -97,6 +97,7 @@ impl AstPrinter for Statement {
                 condition.to_string(),
                 do_st.to_string()
             ),
+            Statement::Return(_keyword, value) => format!("(return {})", value.to_string()),
             Statement::Function(name, params, body) => format!(
                 "(define ({} {}) ({}))",
                 name.lexeme,
@@ -342,6 +343,12 @@ impl Interpreter for Statement {
 
                 Ok(LoxObject::Nil)
             }
+            Statement::Return(_keyword, expression) => {
+                let value = expression.interpret(environment)?;
+                Err(LoxError::ReturnPseudoError {
+                    value
+                })
+            }
             Statement::Function(name, params, body) => {
                 let params = params.iter().map(|param| param.lexeme.to_owned()).collect();
                 // TODO: when creating closures will have to do some unsafe wizardry
@@ -580,14 +587,25 @@ impl LoxCallable {
                     wrapper.define(name, value);
                 });
 
-                let mut result = LoxObject::Nil;
+                let mut result = Ok(LoxObject::Nil);
                 for statement in body {
-                    result = statement.clone().interpret(&mut wrapper)?;
+                    result = match statement.clone().interpret(&mut wrapper) {
+                        Ok(obj) => Ok(obj),
+                        Err(LoxError::ReturnPseudoError { value }) => {
+                            // Do the environment cleanup now before returning
+                            *env = caller;
+                            return Ok(value.clone())
+                        }
+                        Err(_) => {
+                            // Do the environment cleanup now before erroring
+                            *env = caller;
+                            return result;
+                        }
+                    }
                 }
 
                 *env = caller;
-
-                Ok(result)
+                result
             }
             Executable::Native(f) => f(args),
         }

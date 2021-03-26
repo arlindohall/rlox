@@ -1,5 +1,5 @@
 
-use crate::scanner::{Scanner, Token, TokenType};
+use crate::{parser::LoxObject, scanner::{Scanner, Token, TokenType}};
 use crate::{
     builtins::clock,
     parser::{Expression, Parser},
@@ -71,19 +71,24 @@ pub enum LoxError {
         message: String,
         err_type: LoxErrorType,
     },
+    ReturnPseudoError {
+        value: LoxObject,
+    }
 }
 
 impl LoxError {
     pub fn to_string(&self) -> String {
         let err_type = match self {
-            LoxError::ScanError { err_type, .. } => err_type,
-            LoxError::ParseError { err_type, .. } => err_type,
-            LoxError::RuntimeError { err_type, .. } => err_type,
+            LoxError::ScanError { err_type, .. } => format!("{:?}", err_type),
+            LoxError::ParseError { err_type, .. } => format!("{:?}", err_type),
+            LoxError::RuntimeError { err_type, .. } => format!("{:?}", err_type),
+            LoxError::ReturnPseudoError { value: _ } => "return".to_string(),
         };
         let message = match self {
-            LoxError::ScanError { message, .. } => message,
-            LoxError::ParseError { message, .. } => message,
-            LoxError::RuntimeError { message, .. } => message,
+            LoxError::ScanError { message, .. } => message.to_string(),
+            LoxError::ParseError { message, .. } => message.to_string(),
+            LoxError::RuntimeError { message, .. } => message.to_string(),
+            LoxError::ReturnPseudoError { value } => value.to_string(),
         };
         format!("({:?}) --- {}", err_type, message)
     }

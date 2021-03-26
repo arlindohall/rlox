@@ -200,14 +200,6 @@ pub fn reserved(name: &str) -> Option<TokenType> {
 
 pub struct Lox {}
 
-fn global_environment() -> Environment {
-    let mut env = Environment::new();
-
-    env.define("clock".to_owned(), clock());
-
-    env
-}
-
 impl Lox {
     pub fn run(&self, snippet: String) -> Result<(), LoxError> {
         let mut scanner = Scanner::new(snippet);
@@ -217,20 +209,21 @@ impl Lox {
 
         // TODO: maybe this should be structured so Lox doesn't need
         // to know what an environment is?
-        let mut environment = global_environment();
+        let environment = Environment::new();
+        environment.clone().borrow_mut().define("clock".to_owned(), clock());
 
         for statement in statements {
             if TRACE {
                 println!(
                     ">>> Environment before statement env={}",
-                    environment.to_string()
+                    environment.clone().borrow().to_string()
                 );
             }
-            statement.interpret(&mut environment)?;
+            statement.interpret(environment.clone())?;
             if TRACE {
                 println!(
                     ">>> Environment after statement env={}",
-                    environment.to_string()
+                    environment.clone().borrow().to_string()
                 );
             }
         }

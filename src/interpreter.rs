@@ -272,7 +272,7 @@ impl Interpreter for Expression {
                         ),
                     ))
                 } else {
-                    func.call(arguments, environment)
+                    func.call(arguments)
                 }
             }
         }
@@ -476,7 +476,7 @@ impl AstPrinter for Environment {
 #[derive(Clone)]
 pub struct LoxCallable {
     arity: u8,
-    closure: Option<Rc<RefCell<Environment>>>,
+    closure: Rc<RefCell<Environment>>,
     exec: Executable,
     name: String,
 }
@@ -505,12 +505,13 @@ impl LoxCallable {
     pub fn native(
         name: String,
         arity: u8,
+        global: Rc<RefCell<Environment>>,
         f: fn(Vec<LoxObject>) -> Result<LoxObject, LoxError>,
     ) -> LoxCallable {
         LoxCallable {
             arity,
             name,
-            closure: None,
+            closure: global,
             exec: Executable::Native(f),
         }
     }
@@ -523,7 +524,7 @@ impl LoxCallable {
         LoxCallable {
             name,
             arity: params.len() as u8,
-            closure: Some(closure),
+            closure,
             exec: Executable::Interpreted(body, params),
         }
     }
@@ -554,11 +555,10 @@ impl LoxCallable {
     fn call(
         &mut self,
         args: Vec<LoxObject>,
-        env: Rc<RefCell<Environment>>,
     ) -> Result<LoxObject, LoxError> {
         match &self.exec {
             Executable::Interpreted(body, names) => {
-                let wrapper = Environment::extend(env);
+                let wrapper = Environment::extend(self.closure.clone());
 
                 names.iter().enumerate().for_each(|(i, x)| {
                     // Here we guard against calling with different length args and

@@ -210,7 +210,8 @@ impl Lox {
         // TODO: maybe this should be structured so Lox doesn't need
         // to know what an environment is?
         let environment = Environment::new();
-        environment.clone().borrow_mut().define("clock".to_owned(), clock());
+        let clock = clock(environment.clone());
+        environment.clone().borrow_mut().define("clock".to_owned(), clock);
 
         for statement in statements {
             if TRACE {

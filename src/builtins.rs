@@ -1,10 +1,6 @@
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::{cell::RefCell, rc::Rc, time::{SystemTime, UNIX_EPOCH}};
 
-use crate::{
-    interpreter::LoxCallable,
-    lox::{LoxError, LoxErrorType},
-    parser::{Expression, LoxObject},
-};
+use crate::{interpreter::{Environment, LoxCallable}, lox::{LoxError, LoxErrorType}, parser::{Expression, LoxObject}};
 
 /*
  * Built-in clock function. We deviate from lox and show miliseconds.
@@ -20,6 +16,6 @@ fn clock_impl(_args: Vec<LoxObject>) -> Result<LoxObject, LoxError> {
     }
 }
 
-pub fn clock() -> LoxObject {
-    LoxObject::Function(LoxCallable::native("clock".to_string(), 0, clock_impl))
+pub fn clock(global: Rc<RefCell<Environment>>) -> LoxObject {
+    LoxObject::Function(LoxCallable::native("clock".to_string(), 0, global, clock_impl))
 }

@@ -448,6 +448,13 @@ impl Environment {
             ))
         }
     }
+
+    fn global(&self) -> &Environment {
+        match &self.enclosing {
+            None => self,
+            Some(env) => env.global(),
+        }
+    }
 }
 
 impl AstPrinter for Environment {
@@ -551,7 +558,7 @@ impl LoxCallable {
         match &self.exec {
             Executable::Interpreted(body, names) => {
                 let caller = std::mem::replace(env, Environment::new());
-                let mut wrapper = Environment::extend(caller);
+                let mut wrapper = Environment::extend(caller.global().clone());
 
                 names.iter().enumerate().for_each(|(i, x)| {
                     // Here we guard against calling with different length args and
@@ -571,7 +578,7 @@ impl LoxCallable {
                     result = statement.clone().interpret(&mut wrapper)?;
                 }
 
-                *env = *wrapper.enclosing.unwrap();
+                *env = caller;
 
                 Ok(result)
             }

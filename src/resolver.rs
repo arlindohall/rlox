@@ -107,7 +107,9 @@ impl Resolver for Statement {
     fn resolve(&self, scopes: &mut Scopes) -> Result<(), LoxError> {
         match self {
             Statement::Print(_) => {}
-            Statement::Expression(_) => {}
+            Statement::Expression(expr) => {
+                expr.resolve(scopes)?;
+            }
             Statement::Block(statements) => {
                 self.begin_scope(scopes);
                 self.resolve_statements(scopes, statements)?;

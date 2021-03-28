@@ -103,6 +103,7 @@ pub enum LoxErrorType {
     ExpressionError,
     IncompleteExpression,
     DefinitionError,
+    InitializationError,
 
     // Runtime errors
     TypeError,

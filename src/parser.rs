@@ -106,6 +106,10 @@ impl Expression {
             ))
         }
     }
+
+    pub fn resolve_at(&self, _i: usize) {
+        todo!()
+    }
 }
 #[derive(Debug, Clone, PartialEq)]
 pub enum LoxObject {

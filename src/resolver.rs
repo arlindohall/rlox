@@ -106,7 +106,9 @@ impl Resolver for Expression {
 impl Resolver for Statement {
     fn resolve(&self, scopes: &mut Scopes) -> Result<(), LoxError> {
         match self {
-            Statement::Print(_) => {}
+            Statement::Print(expr) => {
+                expr.resolve(scopes)?;
+            }
             Statement::Expression(expr) => {
                 expr.resolve(scopes)?;
             }
@@ -122,14 +124,22 @@ impl Resolver for Statement {
                 }
                 self.define(scopes, name);
             }
-            Statement::If(_, _, _) => {}
+            Statement::If(condition, if_stmt, else_stmt) => {
+                condition.resolve(scopes)?;
+                if_stmt.resolve(scopes)?;
+                if let Some(stmt) = else_stmt {
+                    stmt.resolve(scopes)?;
+                }
+            }
             Statement::Function(name, _, _) => {
                 self.declare(scopes, name);
                 self.define(scopes, name);
                 self.resolve_function(scopes, self)?;
             }
             Statement::While(_, _) => {}
-            Statement::Return(_, _) => {}
+            Statement::Return(_keywd, expr) => {
+                expr.resolve(scopes)?;
+            }
             Statement::None => {}
         }
         Ok(())

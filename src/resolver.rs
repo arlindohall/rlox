@@ -80,12 +80,27 @@ impl Resolver for Expression {
                 self.resolve(scopes)?;
                 self.resolve_local(scopes, value, name)
             }
-            Expression::Binary(_, _, _) => {}
-            Expression::Grouping(_) => {}
-            Expression::Literal(_) => {}
-            Expression::Logical(_, _, _) => {}
-            Expression::Unary(_, _) => {}
-            Expression::Call(_, _, _) => {}
+            Expression::Binary(left, _op, right) => {
+                left.resolve(scopes)?;
+                right.resolve(scopes)?;
+            }
+            Expression::Grouping(expr) => {
+                expr.resolve(scopes)?;
+            }
+            Expression::Literal(_) => (),
+            Expression::Logical(left, _op, right) => {
+                left.resolve(scopes)?;
+                right.resolve(scopes)?;
+            }
+            Expression::Unary(_op, target) => {
+                target.resolve(scopes)?;
+            }
+            Expression::Call(callee, _paren, params) => {
+                callee.resolve(scopes)?;
+                for param in params {
+                    param.resolve(scopes)?;
+                }
+            }
             Expression::Variable(name) => {
                 if let Some(scope) = peek(scopes) {
                     if scope.borrow().contains_key(&name.lexeme) && !scope.borrow().get(&name.lexeme).unwrap() {
@@ -124,8 +139,8 @@ impl Resolver for Statement {
                 }
                 self.define(scopes, name);
             }
-            Statement::If(condition, if_stmt, else_stmt) => {
-                condition.resolve(scopes)?;
+            Statement::If(cond, if_stmt, else_stmt) => {
+                cond.resolve(scopes)?;
                 if_stmt.resolve(scopes)?;
                 if let Some(stmt) = else_stmt {
                     stmt.resolve(scopes)?;
@@ -136,11 +151,14 @@ impl Resolver for Statement {
                 self.define(scopes, name);
                 self.resolve_function(scopes, self)?;
             }
-            Statement::While(_, _) => {}
+            Statement::While(cond, stmt) => {
+                cond.resolve(scopes)?;
+                stmt.resolve(scopes)?;
+            }
             Statement::Return(_keywd, expr) => {
                 expr.resolve(scopes)?;
             }
-            Statement::None => {}
+            Statement::None => ()
         }
         Ok(())
     }

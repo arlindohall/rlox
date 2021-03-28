@@ -58,6 +58,19 @@ pub trait Resolver {
             scope.borrow_mut().insert(name.lexeme.to_string(), true);
         }
     }
+
+    fn resolve_function(&self, scopes: &mut Scopes, statement: &Statement) -> Result<(), LoxError> {
+        if let Statement::Function(_name, params, body) = statement {
+            self.begin_scope(scopes);
+            for param in params {
+                self.declare(scopes, param);
+                self.define(scopes, param);
+            }
+            self.resolve_statements(scopes, body)?;
+            self.end_scope(scopes);
+        }
+        Ok(())
+    }
 }
 
 impl Resolver for Expression {
@@ -108,7 +121,11 @@ impl Resolver for Statement {
                 self.define(scopes, name);
             }
             Statement::If(_, _, _) => {}
-            Statement::Function(_, _, _) => {}
+            Statement::Function(name, _, _) => {
+                self.declare(scopes, name);
+                self.define(scopes, name);
+                self.resolve_function(scopes, self)?;
+            }
             Statement::While(_, _) => {}
             Statement::Return(_, _) => {}
             Statement::None => {}

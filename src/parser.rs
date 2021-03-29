@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap};
 
 use crate::scanner::{Token, TokenType};
 use crate::{
@@ -34,41 +34,67 @@ in turn produce a string. This is logically equivalent to `ExpressionPrinter`
 trait which each expression implements.
 */
 // TODO make these struct-style enums since I already wrote wrapper methods
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub enum Expression {
-    Assignment(Token, Box<Expression>),
-    Binary(Box<Expression>, Token, Box<Expression>),
-    Grouping(Box<Expression>),
-    Literal(LoxObject),
-    Logical(Box<Expression>, Token, Box<Expression>),
-    Unary(Token, Box<Expression>),
-    Call(Box<Expression>, Token, Vec<Expression>),
-    Variable(Token),
+    Assignment(Locals, Token, ExpressionRef),
+    Binary(Locals, ExpressionRef, Token, ExpressionRef),
+    Grouping(Locals, ExpressionRef),
+    Literal(Locals, LoxObject),
+    Logical(Locals, ExpressionRef, Token, ExpressionRef),
+    Unary(Locals, Token, ExpressionRef),
+    Call(Locals, ExpressionRef, Token, Vec<ExpressionRef>),
+    Variable(Locals, Token),
 }
+pub type ExpressionRef = Box<Expression>;
+pub type Locals = Option<usize>;
 
 impl Expression {
-    fn assignment(name: Token, value: Expression) -> Expression {
-        Expression::Assignment(name, Box::new(value))
+    fn assignment(name: Token, value: ExpressionRef) -> ExpressionRef {
+        Box::new(Expression::Assignment(None, name, value))
     }
 
-    fn binary(l: Expression, t: Token, r: Expression) -> Expression {
-        Expression::Binary(Box::new(l), t, Box::new(r))
+    fn binary(l: ExpressionRef, t: Token, r: ExpressionRef) -> ExpressionRef {
+        Box::new(Expression::Binary(None, l, t, r))
     }
 
-    fn grouping(e: Expression) -> Expression {
-        Expression::Grouping(Box::new(e))
+    fn grouping(e: ExpressionRef) -> ExpressionRef {
+        Box::new(Expression::Grouping(None, e))
     }
 
-    fn literal(l: LoxObject) -> Expression {
-        Expression::Literal(l)
+    pub fn literal(l: LoxObject) -> ExpressionRef {
+        Box::new(Expression::Literal(None, l))
     }
 
-    fn logical(l: Expression, op: Token, r: Expression) -> Expression {
-        Expression::Logical(Box::new(l), op, Box::new(r))
+    fn logical(l: ExpressionRef, op: Token, r: ExpressionRef) -> ExpressionRef {
+        Box::new(Expression::Logical(None, l, op, r))
     }
 
-    fn unary(t: Token, e: Expression) -> Expression {
-        Expression::Unary(t, Box::new(e))
+    fn unary(t: Token, e: ExpressionRef) -> ExpressionRef {
+        Box::new(Expression::Unary(None, t, e))
+    }
+
+    fn call(callee: ExpressionRef, paren: Token, args: Vec<ExpressionRef>) -> ExpressionRef {
+        Box::new(Expression::Call(None, callee, paren, args))
+    }
+
+    fn variable(name: Token) -> ExpressionRef {
+        Box::new(Expression::Variable(None, name))
+    }
+
+    pub fn resolve_at(&mut self, i: usize) {
+        match self {
+            Expression::Assignment(l, _, _)
+            | Expression::Binary(l, _, _, _)
+            | Expression::Grouping(l, _)
+            | Expression::Literal(l, _)
+            | Expression::Logical(l, _, _, _)
+            | Expression::Unary(l, _, _)
+            | Expression::Call(l, _, _, _)
+            | Expression::Variable(l, _)
+            => {
+                *l = Some(i)
+            }
+        }
     }
 
     pub fn is_truthy(obj: LoxObject) -> bool {
@@ -105,10 +131,6 @@ impl Expression {
                 &format!("cannot apply operation {:?} to non-numeric types", op),
             ))
         }
-    }
-
-    pub fn resolve_at(&self, _i: usize) {
-        todo!()
     }
 }
 #[derive(Debug, Clone, PartialEq)]
@@ -148,16 +170,16 @@ impl LoxObject {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub enum Statement {
-    Print(Expression),
-    Expression(Expression),
+    Print(ExpressionRef),
+    Expression(ExpressionRef),
     Block(Vec<Statement>),
-    Var(Token, Option<Expression>),
-    If(Expression, Box<Statement>, Option<Box<Statement>>),
+    Var(Token, Option<ExpressionRef>),
+    If(ExpressionRef, Box<Statement>, Option<Box<Statement>>),
     Function(Token, Vec<Token>, Vec<Statement>),
-    While(Expression, Box<Statement>),
-    Return(Token, Expression),
+    While(ExpressionRef, Box<Statement>),
+    Return(Token, ExpressionRef),
     None,
 }
 
@@ -349,7 +371,7 @@ impl Parser {
         body = match condition {
             Some(cond) => Statement::While(cond, Box::new(body)),
             None => Statement::While(
-                Expression::Literal(LoxObject::Boolean(true)),
+                Expression::literal(LoxObject::Boolean(true)),
                 Box::new(body),
             ),
         };
@@ -395,7 +417,7 @@ impl Parser {
     fn return_statement(&mut self) -> Result<Statement, LoxError> {
         let keyword = self.previous();
         let value = if self.check(TokenType::Semicolon) {
-            Expression::Literal(LoxObject::Nil)
+            Expression::literal(LoxObject::Nil)
         } else {
             self.expression()?
         };
@@ -421,11 +443,11 @@ impl Parser {
         Ok(Statement::Expression(expr))
     }
 
-    fn expression(&mut self) -> Result<Expression, LoxError> {
+    fn expression(&mut self) -> Result<ExpressionRef, LoxError> {
         self.assignment()
     }
 
-    fn assignment(&mut self) -> Result<Expression, LoxError> {
+    fn assignment(&mut self) -> Result<ExpressionRef, LoxError> {
         let expr = self.or();
 
         // If this is an assignment, parse the RHS as a normal expression
@@ -435,12 +457,12 @@ impl Parser {
 
             // If the left hand side is a valid assignment target, make the assignment
             // According to the book, we'll revisit this
-            if let Ok(Expression::Variable(token)) = expr {
+            if let Ok(Expression::Variable(_, token)) = expr.map(|a| *a) {
                 return Ok(Expression::assignment(token, value));
             } else {
                 // If it's not valid, report and continue
                 crate::lox::runtime_error(
-                    value,
+                    *value,
                     LoxErrorType::AssignmentError,
                     "invalid assignment target",
                 );
@@ -452,7 +474,7 @@ impl Parser {
         expr
     }
 
-    fn or(&mut self) -> Result<Expression, LoxError> {
+    fn or(&mut self) -> Result<ExpressionRef, LoxError> {
         let mut left = self.and()?;
 
         while self.match_token(TokenType::Or) {
@@ -464,7 +486,7 @@ impl Parser {
         Ok(left)
     }
 
-    fn and(&mut self) -> Result<Expression, LoxError> {
+    fn and(&mut self) -> Result<ExpressionRef, LoxError> {
         let mut left = self.equality()?;
 
         while self.match_token(TokenType::And) {
@@ -476,7 +498,7 @@ impl Parser {
         Ok(left)
     }
 
-    fn equality(&mut self) -> Result<Expression, LoxError> {
+    fn equality(&mut self) -> Result<ExpressionRef, LoxError> {
         let mut expr = self.comparison()?;
 
         while self.match_tokens(vec![TokenType::BangEqual, TokenType::EqualEqual]) {
@@ -488,7 +510,7 @@ impl Parser {
         Ok(expr)
     }
 
-    fn comparison(&mut self) -> Result<Expression, LoxError> {
+    fn comparison(&mut self) -> Result<ExpressionRef, LoxError> {
         let mut expr = self.terminal()?;
 
         while self.match_tokens(vec![
@@ -505,7 +527,7 @@ impl Parser {
         Ok(expr)
     }
 
-    fn terminal(&mut self) -> Result<Expression, LoxError> {
+    fn terminal(&mut self) -> Result<ExpressionRef, LoxError> {
         let mut expr = self.factor()?;
 
         while self.match_tokens(vec![TokenType::Minus, TokenType::Plus]) {
@@ -517,7 +539,7 @@ impl Parser {
         Ok(expr)
     }
 
-    fn factor(&mut self) -> Result<Expression, LoxError> {
+    fn factor(&mut self) -> Result<ExpressionRef, LoxError> {
         let mut expr = self.unary()?;
 
         while self.match_tokens(vec![TokenType::Star, TokenType::Slash]) {
@@ -529,7 +551,7 @@ impl Parser {
         Ok(expr)
     }
 
-    fn unary(&mut self) -> Result<Expression, LoxError> {
+    fn unary(&mut self) -> Result<ExpressionRef, LoxError> {
         if self.match_tokens(vec![TokenType::Bang, TokenType::Minus]) {
             let operator = self.previous();
             let right = self.unary()?;
@@ -539,7 +561,7 @@ impl Parser {
         }
     }
 
-    fn call(&mut self) -> Result<Expression, LoxError> {
+    fn call(&mut self) -> Result<ExpressionRef, LoxError> {
         let mut expr = self.primary()?;
 
         loop {
@@ -553,14 +575,14 @@ impl Parser {
         Ok(expr)
     }
 
-    fn finish_call(&mut self, expr: Expression) -> Result<Expression, LoxError> {
+    fn finish_call(&mut self, expr: ExpressionRef) -> Result<ExpressionRef, LoxError> {
         let mut arguments = Vec::new();
 
         if !self.check(TokenType::RightParen) {
             loop {
                 if arguments.len() >= 255 {
                     return Err(crate::lox::runtime_error(
-                        expr,
+                        *expr,
                         LoxErrorType::FunctionCallError,
                         "can't have more than 255 arguments",
                     ));
@@ -578,10 +600,10 @@ impl Parser {
             "expect ')' after funnction arguments",
         )?;
 
-        Ok(Expression::Call(Box::new(expr), paren, arguments))
+        Ok(Expression::call(expr, paren, arguments))
     }
 
-    fn primary(&mut self) -> Result<Expression, LoxError> {
+    fn primary(&mut self) -> Result<ExpressionRef, LoxError> {
         if self.match_token(TokenType::False) {
             Ok(Expression::literal(LoxObject::Boolean(false)))
         } else if self.match_token(TokenType::True) {
@@ -597,7 +619,7 @@ impl Parser {
                 self.previous().literal.get_string().unwrap(),
             )))
         } else if self.match_token(TokenType::Identifier) {
-            Ok(Expression::Variable(self.previous()))
+            Ok(Expression::variable(self.previous()))
         } else if self.match_token(TokenType::LeftParen) {
             let expr = self.expression()?;
             self.consume(TokenType::RightParen, "Expect ')' after expression")?;

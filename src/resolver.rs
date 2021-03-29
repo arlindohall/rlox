@@ -20,16 +20,16 @@ fn peek(scopes: &Scopes) -> Option<Scope> {
 }
 
 pub trait Resolver {
-    fn resolve(&self, scopes: &mut Scopes) -> Result<(), LoxError>;
+    fn resolve(&mut self, scopes: &mut Scopes) -> Result<(), LoxError>;
 
-    fn resolve_statements(&self, scopes: &mut Scopes, statements: &Vec<Statement>) -> Result<(), LoxError> {
+    fn resolve_statements(&self, scopes: &mut Scopes, statements: &mut Vec<Statement>) -> Result<(), LoxError> {
         for statement in statements {
             statement.resolve(scopes)?
         }
         Ok(())
     }
 
-    fn resolve_local(&self, scopes: &mut Scopes, expr: &Expression, name: &Token) {
+    fn resolve_local(&self, scopes: &mut Scopes, expr: &mut Expression, name: &Token) {
         let mut i = scopes.len();
         for scope in scopes.iter().rev() {
             i -= 1;
@@ -39,7 +39,7 @@ pub trait Resolver {
         }
     }
 
-    fn begin_scope(&self, scopes: &mut Scopes) {
+    fn begin_scope(&mut self, scopes: &mut Scopes) {
         scopes.push(new_scope());
     }
 
@@ -59,7 +59,7 @@ pub trait Resolver {
         }
     }
 
-    fn resolve_function(&self, scopes: &mut Scopes, statement: &Statement) -> Result<(), LoxError> {
+    fn resolve_function(&mut self, scopes: &mut Scopes, statement: &mut Statement) -> Result<(), LoxError> {
         if let Statement::Function(_name, params, body) = statement {
             self.begin_scope(scopes);
             for param in params {
@@ -74,34 +74,34 @@ pub trait Resolver {
 }
 
 impl Resolver for Expression {
-    fn resolve(&self, scopes: &mut Scopes) -> Result<(), LoxError> {
-        match self {
-            Expression::Assignment(name, value) => {
+    fn resolve(&mut self, scopes: &mut Scopes) -> Result<(), LoxError> {
+        match self.clone() {
+            Expression::Assignment(_, name, value) => {
                 self.resolve(scopes)?;
-                self.resolve_local(scopes, value, name)
+                self.resolve_local(scopes, &mut (*value), &name)
             }
-            Expression::Binary(left, _op, right) => {
+            Expression::Binary(_, left, _op, right) => {
                 left.resolve(scopes)?;
                 right.resolve(scopes)?;
             }
-            Expression::Grouping(expr) => {
+            Expression::Grouping(_, expr) => {
                 expr.resolve(scopes)?;
             }
-            Expression::Literal(_) => (),
-            Expression::Logical(left, _op, right) => {
+            Expression::Literal(_, _) => (),
+            Expression::Logical(_, left, _op, right) => {
                 left.resolve(scopes)?;
                 right.resolve(scopes)?;
             }
-            Expression::Unary(_op, target) => {
+            Expression::Unary(_, _op, target) => {
                 target.resolve(scopes)?;
             }
-            Expression::Call(callee, _paren, params) => {
+            Expression::Call(_, callee, _paren, params) => {
                 callee.resolve(scopes)?;
                 for param in params {
                     param.resolve(scopes)?;
                 }
             }
-            Expression::Variable(name) => {
+            Expression::Variable(_, name) => {
                 if let Some(scope) = peek(scopes) {
                     if scope.borrow().contains_key(&name.lexeme) && !scope.borrow().get(&name.lexeme).unwrap() {
                         return Err(crate::lox::parse_error(
@@ -111,7 +111,7 @@ impl Resolver for Expression {
                         ))
                     }
                 }
-                self.resolve_local(scopes, self, name)
+                self.resolve_local(scopes, self, &name)
             }
         }
         Ok(())
@@ -119,7 +119,7 @@ impl Resolver for Expression {
 }
 
 impl Resolver for Statement {
-    fn resolve(&self, scopes: &mut Scopes) -> Result<(), LoxError> {
+    fn resolve(&mut self, scopes: &mut Scopes) -> Result<(), LoxError> {
         match self {
             Statement::Print(expr) => {
                 expr.resolve(scopes)?;

@@ -49,21 +49,21 @@ pub trait Interpreter {
 impl AstPrinter for Expression {
     fn to_string(&self) -> String {
         match self {
-            Expression::Assignment(n, v) => format!("(assign {} {})", n.lexeme, v.to_string()),
-            Expression::Binary(l, t, r) => {
+            Expression::Assignment(_, n, v) => format!("(assign {} {})", n.lexeme, v.to_string()),
+            Expression::Binary(_, l, t, r) => {
                 format!("({} {} {})", t.lexeme, l.to_string(), r.to_string())
             }
-            Expression::Grouping(e) => format!("{}", e.to_string()),
-            Expression::Literal(l) => l.to_string(),
-            Expression::Logical(l, op, r) => {
+            Expression::Grouping(_, e) => format!("{}", e.to_string()),
+            Expression::Literal(_, l) => l.to_string(),
+            Expression::Logical(_, l, op, r) => {
                 format!("({} {} {})", op.lexeme, l.to_string(), r.to_string())
             }
-            Expression::Unary(t, e) => format!("({} {})", t.lexeme, e.to_string()),
-            Expression::Call(callee, _, args) => {
+            Expression::Unary(_, t, e) => format!("({} {})", t.lexeme, e.to_string()),
+            Expression::Call(_, callee, _, args) => {
                 let args: Vec<String> = args.iter().map(|arg| arg.to_string()).collect();
                 format!("({} {})", callee.to_string(), args.join(" "))
             }
-            Expression::Variable(t) => format!("{}", t.lexeme),
+            Expression::Variable(_, t) => format!("{}", t.lexeme),
         }
     }
 }
@@ -117,9 +117,9 @@ impl AstPrinter for Statement {
 impl Interpreter for Expression {
     fn interpret(self, environment: Rc<RefCell<Environment>>) -> Result<LoxObject, LoxError> {
         match self.clone() {
-            Expression::Grouping(expr) => expr.interpret(environment.clone()),
-            Expression::Literal(obj) => Ok(obj),
-            Expression::Unary(op, value) => {
+            Expression::Grouping(_, expr) => expr.interpret(environment.clone()),
+            Expression::Literal(_, obj) => Ok(obj),
+            Expression::Unary(_, op, value) => {
                 let obj = value.clone().interpret(environment.clone())?;
                 match op.token_type {
                     TokenType::Minus => {
@@ -151,7 +151,7 @@ impl Interpreter for Expression {
                     )),
                 }
             }
-            Expression::Binary(left, op, right) => {
+            Expression::Binary(_, left, op, right) => {
                 let robj = right.clone().interpret(environment.clone())?;
                 let lobj = left.clone().interpret(environment.clone())?;
 
@@ -216,10 +216,10 @@ impl Interpreter for Expression {
                     _ => panic!("unimplemented binary operator"),
                 }
             }
-            Expression::Variable(token) => {
+            Expression::Variable(_, token) => {
                 Ok(environment.clone().borrow().get(self, token)?.clone())
             }
-            Expression::Assignment(name, value) => {
+            Expression::Assignment(_, name, value) => {
                 // TODO: This clone could be super expensive, if the whole program is one assignment
                 crate::lox::trace(format!(
                     ">>> Modifying environment={}",
@@ -236,7 +236,7 @@ impl Interpreter for Expression {
 
                 Ok(result)
             }
-            Expression::Logical(l, op, r) => {
+            Expression::Logical(_, l, op, r) => {
                 let left = l.interpret(environment.clone())?;
 
                 if op.token_type == TokenType::Or && Self::is_truthy(left.clone()) {
@@ -247,7 +247,7 @@ impl Interpreter for Expression {
                     r.interpret(environment.clone())
                 }
             }
-            Expression::Call(callee, _paren, args) => {
+            Expression::Call(_, callee, _paren, args) => {
                 crate::lox::trace(format!(
                     ">>> Calling function with environment={}",
                     environment.borrow().to_string()
@@ -535,7 +535,7 @@ impl LoxCallable {
     fn try_from(object: LoxObject) -> Result<LoxCallable, LoxError> {
         fn err(object: LoxObject) -> Result<LoxCallable, LoxError> {
             Err(crate::lox::runtime_error(
-                Expression::Literal(object),
+                *Expression::literal(object),
                 LoxErrorType::FunctionCallError,
                 &format!(""),
             ))

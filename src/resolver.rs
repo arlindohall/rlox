@@ -1,6 +1,8 @@
+#![allow(dead_code)]
+
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
-use crate::{lox::{LoxError, LoxErrorType}, parser::{Expression, Statement}, scanner::Token};
+use crate::{interpreter::Interpreter, lox::{LoxError, LoxErrorType}, parser::{Expression, Statement}, scanner::Token};
 
 // Scope needs to be borrowed mutably by peek in a way
 // that can't be done with &mut borrows, at least not
@@ -13,25 +15,23 @@ fn new_scope() -> Scope {
     Rc::new(RefCell::new(HashMap::new()))
 }
 
-fn peek(scopes: &Scopes) -> Option<Scope> {
-    scopes
-        .get(scopes.len() - 1)
-        .map(|sc| sc.clone())
+struct Resolver {
+    int: Interpreter,
+    scopes: Scopes,
 }
 
-pub trait Resolver {
-    fn resolve(&self, scopes: &mut Scopes) -> Result<(), LoxError>;
+impl Resolver {
 
-    fn resolve_statements(&self, scopes: &mut Scopes, statements: &Vec<Statement>) -> Result<(), LoxError> {
+    fn resolve_statements(&mut self, statements: &Vec<Statement>) -> Result<(), LoxError> {
         for statement in statements {
-            statement.resolve(scopes)?
+            self.resolve_statement(statement)?
         }
         Ok(())
     }
 
-    fn resolve_local(&self, scopes: &mut Scopes, expr: &Expression, name: &Token) {
-        let mut i = scopes.len();
-        for scope in scopes.iter().rev() {
+    fn resolve_local(&mut self, expr: &Expression, name: &Token) {
+        let mut i = self.scopes.len();
+        for scope in self.scopes.iter().rev() {
             i -= 1;
             if scope.borrow().contains_key(&name.lexeme) {
                 expr.resolve_at(i);
@@ -39,70 +39,74 @@ pub trait Resolver {
         }
     }
 
-    fn begin_scope(&self, scopes: &mut Scopes) {
-        scopes.push(new_scope());
+    fn begin_scope(&mut self) {
+        self.scopes.push(new_scope());
     }
 
-    fn end_scope(&self, scopes: &mut Scopes) {
-        scopes.pop();
+    fn end_scope(&mut self) {
+        self.scopes.pop();
     }
 
-    fn declare(&self, scopes: &mut Scopes, name: &Token) {
-        if let Some(scope) = peek(scopes) {
+    fn peek(&self) -> Option<Scope> {
+        self.scopes
+            .get(self.scopes.len() - 1)
+            .map(|sc| sc.clone())
+    }
+
+    fn declare(&mut self, name: &Token) {
+        if let Some(scope) = self.peek() {
             scope.borrow_mut().insert(name.lexeme.to_string(), false);
         }
     }
 
-    fn define(&self, scopes: &mut Scopes, name: &Token) {
-        if let Some(scope) = peek(scopes) {
+    fn define(&self, name: &Token) {
+        if let Some(scope) = self.peek() {
             scope.borrow_mut().insert(name.lexeme.to_string(), true);
         }
     }
 
-    fn resolve_function(&self, scopes: &mut Scopes, statement: &Statement) -> Result<(), LoxError> {
+    fn resolve_function(&mut self, statement: &Statement) -> Result<(), LoxError> {
         if let Statement::Function(_name, params, body) = statement {
-            self.begin_scope(scopes);
+            self.begin_scope();
             for param in params {
-                self.declare(scopes, param);
-                self.define(scopes, param);
+                self.declare(param);
+                self.define(param);
             }
-            self.resolve_statements(scopes, body)?;
-            self.end_scope(scopes);
+            self.resolve_statements(body)?;
+            self.end_scope();
         }
         Ok(())
     }
-}
 
-impl Resolver for Expression {
-    fn resolve(&self, scopes: &mut Scopes) -> Result<(), LoxError> {
-        match self {
+    fn resolve_expression(&mut self, expression: &Expression) -> Result<(), LoxError> {
+        match expression {
             Expression::Assignment(name, value) => {
-                self.resolve(scopes)?;
-                self.resolve_local(scopes, value, name)
+                self.resolve_expression(&value)?;
+                self.resolve_local(&*value, &name)
             }
             Expression::Binary(left, _op, right) => {
-                left.resolve(scopes)?;
-                right.resolve(scopes)?;
+                self.resolve_expression(left)?;
+                self.resolve_expression(&right)?;
             }
             Expression::Grouping(expr) => {
-                expr.resolve(scopes)?;
+                self.resolve_expression(&expr)?;
             }
             Expression::Literal(_) => (),
             Expression::Logical(left, _op, right) => {
-                left.resolve(scopes)?;
-                right.resolve(scopes)?;
+                self.resolve_expression(&left)?;
+                self.resolve_expression(&right)?;
             }
             Expression::Unary(_op, target) => {
-                target.resolve(scopes)?;
+                self.resolve_expression(&target)?;
             }
             Expression::Call(callee, _paren, params) => {
-                callee.resolve(scopes)?;
+                self.resolve_expression(&callee)?;
                 for param in params {
-                    param.resolve(scopes)?;
+                    self.resolve_expression(param)?;
                 }
             }
             Expression::Variable(name) => {
-                if let Some(scope) = peek(scopes) {
+                if let Some(scope) = self.peek() {
                     if scope.borrow().contains_key(&name.lexeme) && !scope.borrow().get(&name.lexeme).unwrap() {
                         return Err(crate::lox::parse_error(
                             name.clone(),
@@ -111,52 +115,50 @@ impl Resolver for Expression {
                         ))
                     }
                 }
-                self.resolve_local(scopes, self, name)
+                self.resolve_local(&expression, &name)
             }
         }
         Ok(())
     }
-}
 
-impl Resolver for Statement {
-    fn resolve(&self, scopes: &mut Scopes) -> Result<(), LoxError> {
-        match self {
+    fn resolve_statement(&mut self, statement: &Statement) -> Result<(), LoxError> {
+        match statement {
             Statement::Print(expr) => {
-                expr.resolve(scopes)?;
+                self.resolve_expression(expr)?;
             }
             Statement::Expression(expr) => {
-                expr.resolve(scopes)?;
+                self.resolve_expression(expr)?;
             }
             Statement::Block(statements) => {
-                self.begin_scope(scopes);
-                self.resolve_statements(scopes, statements)?;
-                self.end_scope(scopes);
+                self.begin_scope();
+                self.resolve_statements(&statements)?;
+                self.end_scope();
             }
             Statement::Var(name, value) => {
-                self.declare(scopes, name);
+                self.declare(&name);
                 if let Some(val) = value {
-                    val.resolve(scopes)?;
+                    self.resolve_expression(val)?;
                 }
-                self.define(scopes, name);
+                self.define(&name);
             }
             Statement::If(cond, if_stmt, else_stmt) => {
-                cond.resolve(scopes)?;
-                if_stmt.resolve(scopes)?;
+                self.resolve_expression(cond)?;
+                self.resolve_statement(&if_stmt)?;
                 if let Some(stmt) = else_stmt {
-                    stmt.resolve(scopes)?;
+                    self.resolve_statement(&stmt)?;
                 }
             }
             Statement::Function(name, _, _) => {
-                self.declare(scopes, name);
-                self.define(scopes, name);
-                self.resolve_function(scopes, self)?;
+                self.declare(&name);
+                self.define(&name);
+                self.resolve_function(&statement)?;
             }
             Statement::While(cond, stmt) => {
-                cond.resolve(scopes)?;
-                stmt.resolve(scopes)?;
+                self.resolve_expression(cond)?;
+                self.resolve_statement(&stmt)?;
             }
             Statement::Return(_keywd, expr) => {
-                expr.resolve(scopes)?;
+                self.resolve_expression(expr)?;
             }
             Statement::None => ()
         }

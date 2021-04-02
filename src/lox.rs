@@ -204,6 +204,10 @@ impl Lox {
             .borrow_mut()
             .define("clock".to_owned(), clock);
 
+        let mut interpreter = Interpreter {
+            environment: environment.clone(),
+        };
+
         for statement in statements {
             if TRACE {
                 println!(
@@ -211,7 +215,7 @@ impl Lox {
                     environment.clone().borrow().to_string()
                 );
             }
-            statement.interpret(environment.clone())?;
+            interpreter.interpret_statement(statement)?;
             if TRACE {
                 println!(
                     ">>> Environment after statement env={}",

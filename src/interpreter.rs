@@ -42,8 +42,16 @@ the environment is setting up to be not only mutable but movable, so I'm going
 to pass in a parameter for now until I've got more details. Clean this up
 later.
 */
-pub trait Interpreter {
-    fn interpret(self, environment: Rc<RefCell<Environment>>) -> Result<LoxObject, LoxError>;
+pub struct Interpreter {
+    pub environment: SharedEnvironment,
+}
+
+fn take_parent(env: &SharedEnvironment) -> SharedEnvironment {
+    env.clone()
+        .borrow()
+        .enclosing
+        .clone()
+        .unwrap()
 }
 
 impl AstPrinter for Expression {
@@ -114,20 +122,20 @@ impl AstPrinter for Statement {
     }
 }
 
-impl Interpreter for Expression {
-    fn interpret(self, environment: Rc<RefCell<Environment>>) -> Result<LoxObject, LoxError> {
-        match self.clone() {
-            Expression::Grouping(expr) => expr.interpret(environment.clone()),
-            Expression::Literal(obj) => Ok(obj),
+impl Interpreter {
+    fn interpret_expression(&mut self, expression: Expression) -> Result<LoxObject, LoxError> {
+        match expression.clone() {
+            Expression::Grouping(expr) => self.interpret_expression(*expr),
+            Expression::Literal(obj) => Ok(obj.clone()),
             Expression::Unary(op, value) => {
-                let obj = value.clone().interpret(environment.clone())?;
+                let obj = self.interpret_expression(*value.clone())?;
                 match op.token_type {
                     TokenType::Minus => {
                         if let LoxObject::Number(n) = obj {
                             Ok(LoxObject::Number(-n))
                         } else {
                             Err(crate::lox::runtime_error(
-                                self,
+                                *value,
                                 LoxErrorType::TypeError,
                                 &format!(
                                     "cannot negate `{}` — expected Number, found {}",
@@ -138,22 +146,22 @@ impl Interpreter for Expression {
                         }
                     }
                     TokenType::Bang => {
-                        if Self::is_truthy(obj) {
+                        if Expression::is_truthy(obj) {
                             Ok(LoxObject::Boolean(false))
                         } else {
                             Ok(LoxObject::Boolean(true))
                         }
                     }
                     _ => Err(crate::lox::runtime_error(
-                        self,
+                        expression,
                         LoxErrorType::UnknownOperator,
                         &format!("'{:?}'", op.token_type),
                     )),
                 }
             }
             Expression::Binary(left, op, right) => {
-                let robj = right.clone().interpret(environment.clone())?;
-                let lobj = left.clone().interpret(environment.clone())?;
+                let robj = self.interpret_expression(*right)?;
+                let lobj = self.interpret_expression(*left)?;
 
                 match op.token_type {
                     TokenType::Minus => match (lobj, robj) {
@@ -161,7 +169,7 @@ impl Interpreter for Expression {
                             Ok(LoxObject::Number(l - r))
                         }
                         _ => Err(crate::lox::runtime_error(
-                            self,
+                            expression.clone(),
                             LoxErrorType::TypeError,
                             "cannot subtract non-numbers",
                         )),
@@ -170,7 +178,7 @@ impl Interpreter for Expression {
                         (LoxObject::Number(l), LoxObject::Number(r)) => {
                             if r == 0.0 {
                                 Err(crate::lox::runtime_error(
-                                    self,
+                                    expression.clone(),
                                     LoxErrorType::DivideByZeroError,
                                     "divide by zero",
                                 ))
@@ -179,7 +187,7 @@ impl Interpreter for Expression {
                             }
                         }
                         _ => Err(crate::lox::runtime_error(
-                            self,
+                            expression.clone(),
                             LoxErrorType::TypeError,
                             "cannot divide non-numbers",
                         )),
@@ -189,7 +197,7 @@ impl Interpreter for Expression {
                             Ok(LoxObject::Number(l * r))
                         }
                         _ => Err(crate::lox::runtime_error(
-                            self,
+                            expression.clone(),
                             LoxErrorType::TypeError,
                             "cannot multiply non-numbers",
                         )),
@@ -202,7 +210,7 @@ impl Interpreter for Expression {
                             Ok(LoxObject::String(l.clone() + &r))
                         }
                         _ => Err(crate::lox::runtime_error(
-                            self,
+                            expression.clone(),
                             LoxErrorType::TypeError,
                             "addition is defined for numbers and strings",
                         )),
@@ -210,53 +218,51 @@ impl Interpreter for Expression {
                     TokenType::Greater
                     | TokenType::GreaterEqual
                     | TokenType::Less
-                    | TokenType::LessEqual => self.apply_compare(op.token_type, lobj, robj),
+                    | TokenType::LessEqual => expression.apply_compare(op.token_type, lobj, robj),
                     TokenType::EqualEqual => Ok(LoxObject::Boolean(lobj == robj)),
                     TokenType::BangEqual => Ok(LoxObject::Boolean(lobj != robj)),
                     _ => panic!("unimplemented binary operator"),
                 }
             }
             Expression::Variable(token) => {
-                Ok(environment.clone().borrow().get(self, token)?.clone())
+                self.environment.borrow().get(expression.clone(), token.clone())
             }
             Expression::Assignment(name, value) => {
                 // TODO: This clone could be super expensive, if the whole program is one assignment
                 crate::lox::trace(format!(
                     ">>> Modifying environment={}",
-                    environment.clone().borrow().to_string()
+                    self.environment.borrow().to_string(),
                 ));
-                let result = value.clone().interpret(environment.clone())?;
-                environment
-                    .borrow_mut()
-                    .assign(*value, name, result.clone())?;
+                let result = self.interpret_expression(*value.clone())?;
+                self.environment.borrow_mut().assign(*value, name, result.clone())?;
                 crate::lox::trace(format!(
                     ">>> Done modifying environment={}",
-                    environment.clone().borrow().to_string()
+                    self.environment.borrow().to_string()
                 ));
 
                 Ok(result)
             }
             Expression::Logical(l, op, r) => {
-                let left = l.interpret(environment.clone())?;
+                let left = self.interpret_expression(*l)?;
 
-                if op.token_type == TokenType::Or && Self::is_truthy(left.clone()) {
+                if op.token_type == TokenType::Or && Expression::is_truthy(left.clone()) {
                     Ok(left)
-                } else if op.token_type == TokenType::And && !Self::is_truthy(left.clone()) {
+                } else if op.token_type == TokenType::And && !Expression::is_truthy(left.clone()) {
                     Ok(left)
                 } else {
-                    r.interpret(environment.clone())
+                    self.interpret_expression(*r)
                 }
             }
             Expression::Call(callee, _paren, args) => {
                 crate::lox::trace(format!(
                     ">>> Calling function with environment={}",
-                    environment.borrow().to_string()
+                    self.environment.borrow().to_string()
                 ));
-                let callee_obj = callee.clone().interpret(environment.clone())?;
+                let callee_obj = self.interpret_expression(*callee.clone())?;
 
                 let mut arguments = Vec::new();
                 for arg in args {
-                    arguments.push(arg.interpret(environment.clone())?);
+                    arguments.push(self.interpret_expression(arg)?);
                 }
 
                 let mut func: LoxCallable = LoxCallable::try_from(callee_obj)?;
@@ -271,30 +277,28 @@ impl Interpreter for Expression {
                         ),
                     ))
                 } else {
-                    func.call(arguments)
+                    func.call(self, arguments)
                 }
             }
         }
     }
-}
 
-impl Interpreter for Statement {
-    fn interpret(self, environment: Rc<RefCell<Environment>>) -> Result<LoxObject, LoxError> {
+    pub fn interpret_statement(&mut self, statement: Statement) -> Result<LoxObject, LoxError> {
         crate::lox::trace(format!(
             ">>> Interpreting at statement={} env={}",
-            self.to_string(),
-            environment.clone().borrow().to_string()
+            statement.to_string(),
+            self.environment.borrow().to_string()
         ));
-        match self {
+        match statement.clone() {
             Statement::Print(expr) => {
-                let obj = expr.interpret(environment)?;
+                let obj = self.interpret_expression(expr)?;
                 println!("{}", obj.to_string());
                 Ok(obj)
             }
-            Statement::Expression(expr) => expr.interpret(environment.clone()),
+            Statement::Expression(expr) => self.interpret_expression(expr),
             Statement::Var(token, expr) => {
                 let value = match expr {
-                    Some(expr) => expr.interpret(environment.clone()),
+                    Some(expr) => self.interpret_expression(expr),
                     None => Ok(LoxObject::Nil),
                 }?;
                 crate::lox::trace(format!(
@@ -302,46 +306,44 @@ impl Interpreter for Statement {
                     token.lexeme,
                     value.to_string()
                 ));
-                environment
-                    .clone()
-                    .borrow_mut()
-                    .define(token.lexeme, value.clone());
+                self.environment.borrow_mut().define(token.lexeme, value.clone());
                 crate::lox::trace(format!(
                     ">>> After definition env={}",
-                    environment.borrow().to_string()
+                    self.environment.borrow().to_string()
                 ));
                 Ok(value)
             }
             Statement::Block(statements) => {
-                let block = Environment::extend(environment.clone());
+                self.environment = Environment::extend(self.environment.clone());
 
                 let mut last = LoxObject::Nil;
                 for statement in statements {
-                    last = statement.interpret(block.clone())?;
+                    last = self.interpret_statement(statement)?;
                 }
 
+                self.environment = take_parent(&self.environment);
                 Ok(last)
             }
             Statement::If(cond, then_st, else_st) => {
-                if Expression::is_truthy(cond.interpret(environment.clone())?) {
-                    then_st.interpret(environment)
+                if Expression::is_truthy(self.interpret_expression(cond)?) {
+                    self.interpret_statement(*then_st)
                 } else {
                     match else_st {
-                        Some(st) => st.interpret(environment),
+                        Some(st) => self.interpret_statement(*st),
                         None => Ok(LoxObject::Nil),
                     }
                 }
             }
             Statement::While(cond, do_st) => {
                 // TODO: This is expensive, maybe don't consume on interpret?
-                while Expression::is_truthy(cond.clone().interpret(environment.clone())?) {
-                    do_st.clone().interpret(environment.clone())?;
+                while Expression::is_truthy(self.interpret_expression(cond.clone())?) {
+                    self.interpret_statement(*do_st.clone())?;
                 }
 
                 Ok(LoxObject::Nil)
             }
             Statement::Return(_keyword, expression) => {
-                let value = expression.interpret(environment)?;
+                let value = self.interpret_expression(expression)?;
                 Err(LoxError::ReturnPseudoError { value })
             }
             Statement::Function(name, params, body) => {
@@ -352,9 +354,9 @@ impl Interpreter for Statement {
                     name.lexeme.clone(),
                     params,
                     body,
-                    environment.clone(),
+                    self.environment.clone()
                 ));
-                environment.borrow_mut().define(name.lexeme, func);
+                self.environment.borrow_mut().define(name.lexeme, func);
                 Ok(LoxObject::Nil)
             }
             Statement::None => Ok(LoxObject::Nil),
@@ -362,21 +364,23 @@ impl Interpreter for Statement {
     }
 }
 
+type SharedEnvironment = Rc<RefCell<Environment>>;
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Environment {
     values: HashMap<String, LoxObject>,
-    enclosing: Option<Rc<RefCell<Environment>>>,
+    enclosing: Option<SharedEnvironment>,
 }
 
 impl Environment {
-    pub fn new() -> Rc<RefCell<Environment>> {
+    pub fn new() -> SharedEnvironment {
         Rc::new(RefCell::new(Environment {
             values: HashMap::new(),
             enclosing: None,
         }))
     }
 
-    pub fn extend(environment: Rc<RefCell<Environment>>) -> Rc<RefCell<Environment>> {
+    pub fn extend(environment: SharedEnvironment) -> SharedEnvironment {
         Rc::new(RefCell::new(Environment {
             values: HashMap::new(),
             enclosing: Some(environment),
@@ -474,7 +478,7 @@ impl AstPrinter for Environment {
 #[derive(Clone)]
 pub struct LoxCallable {
     arity: u8,
-    closure: Rc<RefCell<Environment>>,
+    closure: SharedEnvironment,
     exec: Executable,
     name: String,
 }
@@ -503,7 +507,7 @@ impl LoxCallable {
     pub fn native(
         name: String,
         arity: u8,
-        global: Rc<RefCell<Environment>>,
+        global: SharedEnvironment,
         f: fn(Vec<LoxObject>) -> Result<LoxObject, LoxError>,
     ) -> LoxCallable {
         LoxCallable {
@@ -522,7 +526,7 @@ impl LoxCallable {
         name: String,
         params: Vec<String>,
         body: Vec<Statement>,
-        closure: Rc<RefCell<Environment>>,
+        closure: SharedEnvironment,
     ) -> LoxCallable {
         LoxCallable {
             name,
@@ -555,12 +559,13 @@ impl LoxCallable {
         self.arity
     }
 
-    fn call(&mut self, args: Vec<LoxObject>) -> Result<LoxObject, LoxError> {
-        match &self.exec {
+    fn call(&mut self, interpreter: &mut Interpreter, args: Vec<LoxObject>) -> Result<LoxObject, LoxError> {
+        match self.exec.clone() {
             Executable::Interpreted(body, names) => {
-                let wrapper = Environment::extend(self.closure.clone());
+                let old = interpreter.environment.clone();
+                interpreter.environment = Environment::extend(self.closure.clone());
 
-                names.iter().enumerate().for_each(|(i, x)| {
+                for (i, x) in names.iter().enumerate() {
                     // Here we guard against calling with different length args and
                     // expected args (names). We throw an error in the interpreter if
                     // we reach this state, but still would like to ensure nobody can
@@ -570,25 +575,25 @@ impl LoxCallable {
                         Some(val) => val.clone(),
                         None => LoxObject::Nil,
                     };
-                    wrapper.as_ref().borrow_mut().define(name, value);
-                });
+                    interpreter.environment.borrow_mut().define(name, value);
+                }
 
                 let mut result = Ok(LoxObject::Nil);
                 for statement in body {
-                    result = match statement.clone().interpret(wrapper.clone()) {
+                    result = match interpreter.interpret_statement(statement) {
                         Ok(obj) => Ok(obj),
                         Err(LoxError::ReturnPseudoError { value }) => {
-                            // Eventually, environment cleanup goes here
+                            interpreter.environment = old;
                             return Ok(value.clone());
                         }
                         Err(_) => {
-                            // Eventually , environment cleanup goes here
+                            interpreter.environment = old;
                             return result;
                         }
                     }
                 }
 
-                // Eventually , environment cleanup goes here
+                interpreter.environment = old;
                 result
             }
             Executable::Native(f) => f(args),

@@ -55,7 +55,14 @@ impl std::hash::Hash for Expression {
                 name.lexeme.hash(state);
                 value.hash(state);
             }
-            Expression::Binary(left, op, right) | Expression::Logical(left, op, right) => {
+            Expression::Binary(left, op, right) => {
+                "binary".hash(state);
+                left.hash(state);
+                op.lexeme.hash(state);
+                right.hash(state);
+            }
+            Expression::Logical(left, op, right) => {
+                "logical".hash(state);
                 left.hash(state);
                 op.lexeme.hash(state);
                 right.hash(state);

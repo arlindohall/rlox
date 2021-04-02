@@ -2,7 +2,12 @@
 
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
-use crate::{interpreter::Interpreter, lox::{LoxError, LoxErrorType}, parser::{Expression, Statement}, scanner::Token};
+use crate::{
+    interpreter::Interpreter,
+    lox::{LoxError, LoxErrorType},
+    parser::{Expression, Statement},
+    scanner::Token,
+};
 
 // Scope needs to be borrowed mutably by peek in a way
 // that can't be done with &mut borrows, at least not
@@ -21,7 +26,6 @@ struct Resolver {
 }
 
 impl Resolver {
-
     fn resolve_statements(&mut self, statements: &Vec<Statement>) -> Result<(), LoxError> {
         for statement in statements {
             self.resolve_statement(statement)?
@@ -48,9 +52,7 @@ impl Resolver {
     }
 
     fn peek(&self) -> Option<Scope> {
-        self.scopes
-            .get(self.scopes.len() - 1)
-            .map(|sc| sc.clone())
+        self.scopes.get(self.scopes.len() - 1).map(|sc| sc.clone())
     }
 
     fn declare(&mut self, name: &Token) {
@@ -107,12 +109,14 @@ impl Resolver {
             }
             Expression::Variable(name) => {
                 if let Some(scope) = self.peek() {
-                    if scope.borrow().contains_key(&name.lexeme) && !scope.borrow().get(&name.lexeme).unwrap() {
+                    if scope.borrow().contains_key(&name.lexeme)
+                        && !scope.borrow().get(&name.lexeme).unwrap()
+                    {
                         return Err(crate::lox::parse_error(
                             name.clone(),
                             LoxErrorType::InitializationError,
-                            "can't read local variable in its own initializer"
-                        ))
+                            "can't read local variable in its own initializer",
+                        ));
                     }
                 }
                 self.resolve_local(&expression, &name)
@@ -160,7 +164,7 @@ impl Resolver {
             Statement::Return(_keywd, expr) => {
                 self.resolve_expression(expr)?;
             }
-            Statement::None => ()
+            Statement::None => (),
         }
         Ok(())
     }

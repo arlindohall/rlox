@@ -50,11 +50,7 @@ pub struct Interpreter {
 type Locals = HashMap<Expression, usize>;
 
 fn take_parent(env: &SharedEnvironment) -> SharedEnvironment {
-    env.clone()
-        .borrow()
-        .enclosing
-        .clone()
-        .unwrap()
+    env.clone().borrow().enclosing.clone().unwrap()
 }
 
 impl AstPrinter for Expression {
@@ -238,9 +234,10 @@ impl Interpreter {
                     _ => panic!("unimplemented binary operator"),
                 }
             }
-            Expression::Variable(token) => {
-                self.environment.borrow().get(expression.clone(), token.clone())
-            }
+            Expression::Variable(token) => self
+                .environment
+                .borrow()
+                .get(expression.clone(), token.clone()),
             Expression::Assignment(name, value) => {
                 // TODO: This clone could be super expensive, if the whole program is one assignment
                 crate::lox::trace(format!(
@@ -248,7 +245,9 @@ impl Interpreter {
                     self.environment.borrow().to_string(),
                 ));
                 let result = self.interpret_expression(*value.clone())?;
-                self.environment.borrow_mut().assign(*value, name, result.clone())?;
+                self.environment
+                    .borrow_mut()
+                    .assign(*value, name, result.clone())?;
                 crate::lox::trace(format!(
                     ">>> Done modifying environment={}",
                     self.environment.borrow().to_string()
@@ -320,7 +319,9 @@ impl Interpreter {
                     token.lexeme,
                     value.to_string()
                 ));
-                self.environment.borrow_mut().define(token.lexeme, value.clone());
+                self.environment
+                    .borrow_mut()
+                    .define(token.lexeme, value.clone());
                 crate::lox::trace(format!(
                     ">>> After definition env={}",
                     self.environment.borrow().to_string()
@@ -368,7 +369,7 @@ impl Interpreter {
                     name.lexeme.clone(),
                     params,
                     body,
-                    self.environment.clone()
+                    self.environment.clone(),
                 ));
                 self.environment.borrow_mut().define(name.lexeme, func);
                 Ok(LoxObject::Nil)
@@ -594,7 +595,11 @@ impl LoxCallable {
         self.arity
     }
 
-    fn call(&mut self, interpreter: &mut Interpreter, args: Vec<LoxObject>) -> Result<LoxObject, LoxError> {
+    fn call(
+        &mut self,
+        interpreter: &mut Interpreter,
+        args: Vec<LoxObject>,
+    ) -> Result<LoxObject, LoxError> {
         match self.exec.clone() {
             Executable::Interpreted(body, names) => {
                 let old = interpreter.environment.clone();

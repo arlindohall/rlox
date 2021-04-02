@@ -16,7 +16,7 @@ fn new_scope() -> Scope {
 }
 
 struct Resolver {
-    int: Interpreter,
+    interpreter: Interpreter,
     scopes: Scopes,
 }
 
@@ -34,7 +34,7 @@ impl Resolver {
         for scope in self.scopes.iter().rev() {
             i -= 1;
             if scope.borrow().contains_key(&name.lexeme) {
-                expr.resolve_at(i);
+                self.interpreter.resolve(expr.clone(), i);
             }
         }
     }

@@ -44,7 +44,10 @@ later.
 */
 pub struct Interpreter {
     pub environment: SharedEnvironment,
+    locals: Locals,
 }
+
+type Locals = HashMap<Expression, usize>;
 
 fn take_parent(env: &SharedEnvironment) -> SharedEnvironment {
     env.clone()
@@ -123,6 +126,17 @@ impl AstPrinter for Statement {
 }
 
 impl Interpreter {
+    pub fn with_env(environment: SharedEnvironment) -> Interpreter {
+        Interpreter {
+            environment,
+            locals: HashMap::new(),
+        }
+    }
+
+    pub fn resolve(&mut self, expression: Expression, i: usize) {
+        self.locals.insert(expression, i);
+    }
+
     fn interpret_expression(&mut self, expression: Expression) -> Result<LoxObject, LoxError> {
         match expression.clone() {
             Expression::Grouping(expr) => self.interpret_expression(*expr),
@@ -372,6 +386,19 @@ pub struct Environment {
     enclosing: Option<SharedEnvironment>,
 }
 
+impl std::hash::Hash for Environment {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        "environment".hash(state);
+        for (k, v) in self.values.iter() {
+            k.hash(state);
+            v.hash(state);
+        }
+        if let Some(env) = &self.enclosing {
+            env.borrow().hash(state);
+        }
+    }
+}
+
 impl Environment {
     pub fn new() -> SharedEnvironment {
         Rc::new(RefCell::new(Environment {
@@ -486,6 +513,14 @@ pub struct LoxCallable {
 impl std::fmt::Debug for LoxCallable {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.to_string())
+    }
+}
+
+impl std::hash::Hash for LoxCallable {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.arity.hash(state);
+        self.name.hash(state);
+        self.closure.borrow().hash(state);
     }
 }
 

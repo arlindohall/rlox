@@ -46,6 +46,46 @@ pub enum Expression {
     Variable(Token),
 }
 
+impl Eq for Expression {}
+impl std::hash::Hash for Expression {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        match self {
+            Expression::Assignment(name, value) => {
+                "assignment".hash(state);
+                name.lexeme.hash(state);
+                value.hash(state);
+            }
+            Expression::Binary(left, op, right)
+            | Expression::Logical(left, op, right) => {
+                left.hash(state);
+                op.lexeme.hash(state);
+                right.hash(state);
+            }
+            Expression::Grouping(expr) => {
+                expr.hash(state);
+            }
+            Expression::Unary(op, expr) => {
+                "unary".hash(state);
+                op.lexeme.hash(state);
+                expr.hash(state);
+            }
+            Expression::Call(callee, _paren, args) => {
+                "function".hash(state);
+                callee.hash(state);
+                for arg in args {
+                    arg.hash(state);
+                }
+            }
+            Expression::Variable(name) => {
+                name.lexeme.hash(state);
+            }
+            Expression::Literal(obj) => {
+                obj.hash(state);
+            }
+        }
+    }
+}
+
 impl Expression {
     fn assignment(name: Token, value: Expression) -> Expression {
         Expression::Assignment(name, Box::new(value))
@@ -106,10 +146,6 @@ impl Expression {
             ))
         }
     }
-
-    pub fn resolve_at(&self, _i: usize) {
-        todo!()
-    }
 }
 #[derive(Debug, Clone, PartialEq)]
 pub enum LoxObject {
@@ -119,6 +155,35 @@ pub enum LoxObject {
     Object(HashMap<String, Box<LoxObject>>),
     Function(LoxCallable),
     Nil,
+}
+
+impl std::hash::Hash for LoxObject {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        "lox-object".hash(state);
+        match self {
+            LoxObject::Boolean(b) => {
+                b.hash(state);
+            }
+            LoxObject::String(s) => {
+                s.hash(state);
+            }
+            LoxObject::Number(n) => {
+                n.to_string().hash(state);
+            }
+            LoxObject::Object(o) => {
+                for (k, v) in o.iter() {
+                    k.hash(state);
+                    v.hash(state);
+                }
+            }
+            LoxObject::Function(f) => {
+                f.hash(state);
+            }
+            LoxObject::Nil => {
+                "nil".hash(state);
+            }
+        }
+    }
 }
 
 impl LoxObject {

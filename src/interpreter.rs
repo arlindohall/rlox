@@ -1,8 +1,11 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
-use crate::{lox::{LoxError, LoxErrorType}, parser::ExpressionId};
 use crate::parser::{Expression, LoxObject, Statement};
 use crate::scanner::{Token, TokenType};
+use crate::{
+    lox::{LoxError, LoxErrorType},
+    parser::ExpressionId,
+};
 
 /*******************************************************************************
 ********************************************************************************
@@ -146,18 +149,23 @@ impl Interpreter {
         ));
         match distance {
             Some(dist) => self.get_at(*dist, name),
-            None => Ok(self.globals.borrow().values.get(&name.lexeme).unwrap().clone()),
+            None => Ok(self
+                .globals
+                .borrow()
+                .values
+                .get(&name.lexeme)
+                .unwrap()
+                .clone()),
         }
     }
 
     fn get_at(&self, distance: u16, name: Token) -> Result<LoxObject, LoxError> {
         crate::lox::trace(format!(
             ">>> Getting name={}, distance={}, env={:?}",
-            name.lexeme,
-            &distance,
-            self.environment,
+            name.lexeme, &distance, self.environment,
         ));
-        let value = self.ancestor(distance)
+        let value = self
+            .ancestor(distance)
             .borrow()
             .values
             .get(&name.lexeme)
@@ -174,7 +182,10 @@ impl Interpreter {
             value,
             self.environment.borrow().to_string(),
         ));
-        Ok(self.ancestor(distance).borrow_mut().define(name.lexeme, value))
+        Ok(self
+            .ancestor(distance)
+            .borrow_mut()
+            .define(name.lexeme, value))
     }
 
     fn ancestor(&self, distance: u16) -> SharedEnvironment {
@@ -182,8 +193,7 @@ impl Interpreter {
         let mut env = self.environment.clone();
         crate::lox::trace(format!(
             ">>> Getting ancestor at distance={}, env={:?}",
-            distance,
-            env,
+            distance, env,
         ));
         while distance > 1 {
             crate::lox::trace(format!("  ... pulling from environment {}", distance));

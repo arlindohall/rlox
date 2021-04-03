@@ -2,7 +2,12 @@
 
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
-use crate::{interpreter::Interpreter, lox::{LoxError, LoxErrorType}, parser::{Expression, Statement}, scanner::Token};
+use crate::{
+    interpreter::Interpreter,
+    lox::{LoxError, LoxErrorType},
+    parser::{Expression, Statement},
+    scanner::Token,
+};
 
 // Scope needs to be borrowed mutably by peek in a way
 // that can't be done with &mut borrows, at least not
@@ -47,8 +52,7 @@ impl Resolver {
         let mut i = 0;
         crate::lox::trace(format!(
             ">>> Resolving local variable expr={:?}, scopes={:?}",
-            name.lexeme,
-            self.scopes,
+            name.lexeme, self.scopes,
         ));
         for scope in self.scopes.iter().rev() {
             i += 1;
@@ -151,7 +155,10 @@ impl Resolver {
                 self.resolve_expression(expr)?;
             }
             Statement::Block(statements) => {
-                crate::lox::trace(format!(">>> Resolving block statement stmt={:?}", statement));
+                crate::lox::trace(format!(
+                    ">>> Resolving block statement stmt={:?}",
+                    statement
+                ));
                 self.begin_scope();
                 self.resolve_statements(&statements)?;
                 self.end_scope();
@@ -176,7 +183,10 @@ impl Resolver {
                 self.resolve_function(&statement)?;
             }
             Statement::While(cond, stmt) => {
-                crate::lox::trace(format!(">>> Resolving while statement stmt={:?}", statement));
+                crate::lox::trace(format!(
+                    ">>> Resolving while statement stmt={:?}",
+                    statement
+                ));
                 self.resolve_expression(cond)?;
                 self.resolve_statement(&stmt)?;
             }

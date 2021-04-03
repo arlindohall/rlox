@@ -1,11 +1,11 @@
 use std::collections::HashMap;
 
-use uuid::Uuid;
 use crate::scanner::{Token, TokenType};
 use crate::{
     interpreter::LoxCallable,
     lox::{FileLocation, LoxError, LoxErrorType, LoxNumber},
 };
+use uuid::Uuid;
 
 /*******************************************************************************
 ********************************************************************************
@@ -90,11 +90,11 @@ impl Expression {
 
     pub fn get_id(&self) -> String {
         match self {
-            Expression::Variable(id, _)
-            | Expression::Assignment(id, _, _) => {
-                id.clone()
-            }
-            _ => panic!(format!("Unrecoverable lox error to get expression id for expression {:?}", self))
+            Expression::Variable(id, _) | Expression::Assignment(id, _, _) => id.clone(),
+            _ => panic!(format!(
+                "Unrecoverable lox error to get expression id for expression {:?}",
+                self
+            )),
         }
     }
 

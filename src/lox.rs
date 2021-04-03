@@ -1,7 +1,10 @@
-use crate::{interpreter::{AstPrinter, Environment, Interpreter}, resolver::Resolver};
 use crate::{
     builtins::clock,
     parser::{Expression, Parser},
+};
+use crate::{
+    interpreter::{AstPrinter, Environment, Interpreter},
+    resolver::Resolver,
 };
 use crate::{
     parser::LoxObject,

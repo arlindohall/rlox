@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use uuid::Uuid;
 use crate::scanner::{Token, TokenType};
 use crate::{
     interpreter::LoxCallable,
@@ -34,67 +35,29 @@ in turn produce a string. This is logically equivalent to `ExpressionPrinter`
 trait which each expression implements.
 */
 // TODO make these struct-style enums since I already wrote wrapper methods
+
+// Hey, dummy, start working here when you start again. This is where you
+// need to create expression IDs for each expression that can be used as a
+// hash for the side table. The ID needs to be created with the expression
+// in the parser, and then it can be used to track the expression throughout
+// the program. Also, you can get rid of the hashes for all the other types.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expression {
-    Assignment(Token, Box<Expression>),
+    Assignment(ExpressionId, Token, Box<Expression>),
     Binary(Box<Expression>, Token, Box<Expression>),
     Grouping(Box<Expression>),
     Literal(LoxObject),
     Logical(Box<Expression>, Token, Box<Expression>),
     Unary(Token, Box<Expression>),
     Call(Box<Expression>, Token, Vec<Expression>),
-    Variable(Token),
+    Variable(ExpressionId, Token),
 }
 
-impl Eq for Expression {}
-impl std::hash::Hash for Expression {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        match self {
-            Expression::Assignment(name, value) => {
-                "assignment".hash(state);
-                name.lexeme.hash(state);
-                value.hash(state);
-            }
-            Expression::Binary(left, op, right) => {
-                "binary".hash(state);
-                left.hash(state);
-                op.lexeme.hash(state);
-                right.hash(state);
-            }
-            Expression::Logical(left, op, right) => {
-                "logical".hash(state);
-                left.hash(state);
-                op.lexeme.hash(state);
-                right.hash(state);
-            }
-            Expression::Grouping(expr) => {
-                expr.hash(state);
-            }
-            Expression::Unary(op, expr) => {
-                "unary".hash(state);
-                op.lexeme.hash(state);
-                expr.hash(state);
-            }
-            Expression::Call(callee, _paren, args) => {
-                "function".hash(state);
-                callee.hash(state);
-                for arg in args {
-                    arg.hash(state);
-                }
-            }
-            Expression::Variable(name) => {
-                name.lexeme.hash(state);
-            }
-            Expression::Literal(obj) => {
-                obj.hash(state);
-            }
-        }
-    }
-}
+pub type ExpressionId = String;
 
 impl Expression {
     fn assignment(name: Token, value: Expression) -> Expression {
-        Expression::Assignment(name, Box::new(value))
+        Expression::Assignment(Uuid::new_v4().to_string(), name, Box::new(value))
     }
 
     fn binary(l: Expression, t: Token, r: Expression) -> Expression {
@@ -115,6 +78,24 @@ impl Expression {
 
     fn unary(t: Token, e: Expression) -> Expression {
         Expression::Unary(t, Box::new(e))
+    }
+
+    fn variable(t: Token) -> Expression {
+        Expression::Variable(Uuid::new_v4().to_string(), t)
+    }
+
+    fn call(callee: Expression, paren: Token, params: Vec<Expression>) -> Expression {
+        Expression::Call(Box::new(callee), paren, params)
+    }
+
+    pub fn get_id(&self) -> String {
+        match self {
+            Expression::Variable(id, _)
+            | Expression::Assignment(id, _, _) => {
+                id.clone()
+            }
+            _ => panic!(format!("Unrecoverable lox error to get expression id for expression {:?}", self))
+        }
     }
 
     pub fn is_truthy(obj: LoxObject) -> bool {
@@ -161,35 +142,6 @@ pub enum LoxObject {
     Object(HashMap<String, Box<LoxObject>>),
     Function(LoxCallable),
     Nil,
-}
-
-impl std::hash::Hash for LoxObject {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        "lox-object".hash(state);
-        match self {
-            LoxObject::Boolean(b) => {
-                b.hash(state);
-            }
-            LoxObject::String(s) => {
-                s.hash(state);
-            }
-            LoxObject::Number(n) => {
-                n.to_string().hash(state);
-            }
-            LoxObject::Object(o) => {
-                for (k, v) in o.iter() {
-                    k.hash(state);
-                    v.hash(state);
-                }
-            }
-            LoxObject::Function(f) => {
-                f.hash(state);
-            }
-            LoxObject::Nil => {
-                "nil".hash(state);
-            }
-        }
-    }
 }
 
 impl LoxObject {
@@ -506,7 +458,7 @@ impl Parser {
 
             // If the left hand side is a valid assignment target, make the assignment
             // According to the book, we'll revisit this
-            if let Ok(Expression::Variable(token)) = expr {
+            if let Ok(Expression::Variable(_, token)) = expr {
                 return Ok(Expression::assignment(token, value));
             } else {
                 // If it's not valid, report and continue
@@ -649,7 +601,7 @@ impl Parser {
             "expect ')' after funnction arguments",
         )?;
 
-        Ok(Expression::Call(Box::new(expr), paren, arguments))
+        Ok(Expression::call(expr, paren, arguments))
     }
 
     fn primary(&mut self) -> Result<Expression, LoxError> {
@@ -668,7 +620,7 @@ impl Parser {
                 self.previous().literal.get_string().unwrap(),
             )))
         } else if self.match_token(TokenType::Identifier) {
-            Ok(Expression::Variable(self.previous()))
+            Ok(Expression::variable(self.previous()))
         } else if self.match_token(TokenType::LeftParen) {
             let expr = self.expression()?;
             self.consume(TokenType::RightParen, "Expect ')' after expression")?;

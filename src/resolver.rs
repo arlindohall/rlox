@@ -24,7 +24,7 @@ impl Resolver {
     pub fn new(interpreter: Interpreter) -> Resolver {
         Resolver {
             interpreter,
-            scopes: Scopes::new(),
+            scopes: vec![new_scope()],
         }
     }
 
@@ -40,11 +40,22 @@ impl Resolver {
     }
 
     fn resolve_local(&mut self, expr: &Expression, name: &Token) {
-        let mut i = self.scopes.len() as u16;
+        // Not sure what's going on here, I must have reversed something
+        // by not reading the code closely, idk. This works so I guess
+        // it's fine for now
+        // let mut i = self.scopes.len() as u16;
+        let mut i = 0;
+        crate::lox::trace(format!(
+            ">>> Resolving local variable expr={:?}, scopes={:?}",
+            name.lexeme,
+            self.scopes,
+        ));
         for scope in self.scopes.iter().rev() {
-            i -= 1;
+            i += 1;
             if scope.borrow().contains_key(&name.lexeme) {
+                crate::lox::trace(format!(">>> Found at {}", i));
                 self.interpreter.resolve(expr.clone(), i);
+                return;
             }
         }
     }
@@ -88,9 +99,9 @@ impl Resolver {
 
     fn resolve_expression(&mut self, expression: &Expression) -> Result<(), LoxError> {
         match expression {
-            Expression::Assignment(name, value) => {
+            Expression::Assignment(_, name, value) => {
                 self.resolve_expression(&value)?;
-                self.resolve_local(&*value, &name)
+                self.resolve_local(expression, &name)
             }
             Expression::Binary(left, _op, right) => {
                 self.resolve_expression(left)?;
@@ -113,7 +124,7 @@ impl Resolver {
                     self.resolve_expression(param)?;
                 }
             }
-            Expression::Variable(name) => {
+            Expression::Variable(_, name) => {
                 if let Some(scope) = self.peek() {
                     if scope.borrow().contains_key(&name.lexeme)
                         && !scope.borrow().get(&name.lexeme).unwrap()
@@ -140,6 +151,7 @@ impl Resolver {
                 self.resolve_expression(expr)?;
             }
             Statement::Block(statements) => {
+                crate::lox::trace(format!(">>> Resolving block statement stmt={:?}", statement));
                 self.begin_scope();
                 self.resolve_statements(&statements)?;
                 self.end_scope();
@@ -164,6 +176,7 @@ impl Resolver {
                 self.resolve_function(&statement)?;
             }
             Statement::While(cond, stmt) => {
+                crate::lox::trace(format!(">>> Resolving while statement stmt={:?}", statement));
                 self.resolve_expression(cond)?;
                 self.resolve_statement(&stmt)?;
             }

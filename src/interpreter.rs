@@ -1,6 +1,6 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
-use crate::lox::{LoxError, LoxErrorType};
+use crate::{lox::{LoxError, LoxErrorType}, parser::ExpressionId};
 use crate::parser::{Expression, LoxObject, Statement};
 use crate::scanner::{Token, TokenType};
 
@@ -48,7 +48,7 @@ pub struct Interpreter {
     globals: SharedEnvironment,
 }
 
-type Locals = HashMap<Expression, u16>;
+type Locals = HashMap<ExpressionId, u16>;
 
 fn take_parent(env: &SharedEnvironment) -> SharedEnvironment {
     env.clone().borrow().enclosing.clone().unwrap()
@@ -57,7 +57,7 @@ fn take_parent(env: &SharedEnvironment) -> SharedEnvironment {
 impl AstPrinter for Expression {
     fn to_string(&self) -> String {
         match self {
-            Expression::Assignment(n, v) => format!("(assign {} {})", n.lexeme, v.to_string()),
+            Expression::Assignment(_, n, v) => format!("(assign {} {})", n.lexeme, v.to_string()),
             Expression::Binary(l, t, r) => {
                 format!("({} {} {})", t.lexeme, l.to_string(), r.to_string())
             }
@@ -71,7 +71,7 @@ impl AstPrinter for Expression {
                 let args: Vec<String> = args.iter().map(|arg| arg.to_string()).collect();
                 format!("({} {})", callee.to_string(), args.join(" "))
             }
-            Expression::Variable(t) => format!("{}", t.lexeme),
+            Expression::Variable(_, t) => format!("{}", t.lexeme),
         }
     }
 }
@@ -132,11 +132,12 @@ impl Interpreter {
     }
 
     pub fn resolve(&mut self, expression: Expression, i: u16) {
-        self.locals.insert(expression, i);
+        crate::lox::trace(format!(">>> Resolving level={}, expr={:?}", i, expression));
+        self.locals.insert(expression.get_id(), i);
     }
 
     fn lookup_variable(&self, name: Token, expression: Expression) -> Result<LoxObject, LoxError> {
-        let distance = self.locals.get(&expression);
+        let distance = self.locals.get(&expression.get_id());
         crate::lox::trace(format!(
             ">>> Looking for variable name={}, dist={:?}, env={}",
             name.lexeme,
@@ -144,23 +145,49 @@ impl Interpreter {
             self.environment.borrow().to_string(),
         ));
         match distance {
-            Some(dist) => self.get_at(*dist, expression, name),
-            None => self.globals.borrow().get(expression, name),
+            Some(dist) => self.get_at(*dist, name),
+            None => Ok(self.globals.borrow().values.get(&name.lexeme).unwrap().clone()),
         }
     }
 
-    fn get_at(&self, distance: u16, expression: Expression, name: Token) -> Result<LoxObject, LoxError> {
-        self.ancestor(distance).borrow().get(expression, name)
+    fn get_at(&self, distance: u16, name: Token) -> Result<LoxObject, LoxError> {
+        crate::lox::trace(format!(
+            ">>> Getting name={}, distance={}, env={:?}",
+            name.lexeme,
+            &distance,
+            self.environment,
+        ));
+        let value = self.ancestor(distance)
+            .borrow()
+            .values
+            .get(&name.lexeme)
+            .unwrap()
+            .clone();
+        Ok(value)
     }
 
-    fn assign_at(&self, distance: u16, expression: Expression, name: Token, value: LoxObject) -> Result<(), LoxError> {
-        self.ancestor(distance).borrow_mut().assign(expression, name, value)
+    fn assign_at(&self, distance: u16, name: Token, value: LoxObject) -> Result<(), LoxError> {
+        crate::lox::trace(format!(
+            ">>> Assigning name={}, distance={}, value={:?}, env={}",
+            name.lexeme,
+            &distance,
+            value,
+            self.environment.borrow().to_string(),
+        ));
+        Ok(self.ancestor(distance).borrow_mut().define(name.lexeme, value))
     }
 
-    fn ancestor(&self, mut distance: u16) -> SharedEnvironment {
+    fn ancestor(&self, distance: u16) -> SharedEnvironment {
+        let mut distance = distance.clone();
         let mut env = self.environment.clone();
-        while distance <= (1 as u16) {
-            env = self.environment.borrow().enclosing.clone().unwrap();
+        crate::lox::trace(format!(
+            ">>> Getting ancestor at distance={}, env={:?}",
+            distance,
+            env,
+        ));
+        while distance > 1 {
+            crate::lox::trace(format!("  ... pulling from environment {}", distance));
+            env = take_parent(&env);
             distance -= 1;
         }
         env
@@ -267,18 +294,18 @@ impl Interpreter {
                     _ => panic!("unimplemented binary operator"),
                 }
             }
-            Expression::Variable(token) => self.lookup_variable(token, expression),
-            Expression::Assignment(name, value) => {
+            Expression::Variable(_, token) => self.lookup_variable(token, expression),
+            Expression::Assignment(_, name, value) => {
                 // TODO: This clone could be super expensive, if the whole program is one assignment
                 crate::lox::trace(format!(
                     ">>> Modifying environment={}",
                     self.environment.borrow().to_string(),
                 ));
                 let value = self.interpret_expression(*value.clone())?;
-                let distance = self.locals.get(&expression);
+                let distance = self.locals.get(&expression.get_id());
                 match distance {
-                    Some(dist) => self.assign_at(*dist, expression, name, value.clone()),
-                    None => self.globals.borrow_mut().assign(expression, name, value.clone()),
+                    Some(dist) => self.assign_at(*dist, name, value.clone()),
+                    None => Ok(self.globals.borrow_mut().define(name.lexeme, value.clone())),
                 }?;
                 crate::lox::trace(format!(
                     ">>> Done modifying environment={}",
@@ -419,19 +446,6 @@ pub struct Environment {
     enclosing: Option<SharedEnvironment>,
 }
 
-impl std::hash::Hash for Environment {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        "environment".hash(state);
-        for (k, v) in self.values.iter() {
-            k.hash(state);
-            v.hash(state);
-        }
-        if let Some(env) = &self.enclosing {
-            env.borrow().hash(state);
-        }
-    }
-}
-
 impl Environment {
     pub fn new() -> SharedEnvironment {
         Rc::new(RefCell::new(Environment {
@@ -458,57 +472,6 @@ impl Environment {
             ">>> Raw environment contents map={:?}",
             self.values
         ));
-    }
-
-    fn get(&self, expression: Expression, name: Token) -> Result<LoxObject, LoxError> {
-        crate::lox::trace(format!(
-            ">>> Debugging get at expression={}, token={:?}, environment={}",
-            expression.to_string(),
-            name,
-            self.to_string(),
-        ));
-        if let Some(value) = self.values.get(&name.lexeme) {
-            Ok(value.clone())
-        } else if self.enclosing.is_some() {
-            let item = &self
-                .enclosing
-                .as_ref()
-                .unwrap()
-                .borrow()
-                .get(expression, name)?;
-            Ok(item.clone())
-        } else {
-            Err(crate::lox::runtime_error(
-                expression,
-                LoxErrorType::AssignmentError,
-                &format!("undefined variable {}", name.lexeme),
-            ))
-        }
-    }
-
-    fn assign(
-        &mut self,
-        expression: Expression,
-        name: Token,
-        value: LoxObject,
-    ) -> Result<(), LoxError> {
-        if self.values.contains_key(&name.lexeme) {
-            self.values.insert(name.lexeme, value);
-            Ok(())
-        } else if self.enclosing.is_some() {
-            self.enclosing
-                .as_ref()
-                .unwrap()
-                .borrow_mut()
-                .assign(expression, name, value)?;
-            Ok(())
-        } else {
-            Err(crate::lox::runtime_error(
-                expression,
-                LoxErrorType::AssignmentError,
-                &format!("undefined variable {}", name.lexeme),
-            ))
-        }
     }
 }
 
@@ -546,14 +509,6 @@ pub struct LoxCallable {
 impl std::fmt::Debug for LoxCallable {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.to_string())
-    }
-}
-
-impl std::hash::Hash for LoxCallable {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.arity.hash(state);
-        self.name.hash(state);
-        self.closure.borrow().hash(state);
     }
 }
 

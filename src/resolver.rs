@@ -2,12 +2,7 @@
 
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
-use crate::{
-    interpreter::Interpreter,
-    lox::{LoxError, LoxErrorType},
-    parser::{Expression, Statement},
-    scanner::Token,
-};
+use crate::{interpreter::Interpreter, lox::{LoxError, LoxErrorType}, parser::{Expression, Statement}, scanner::Token};
 
 // Scope needs to be borrowed mutably by peek in a way
 // that can't be done with &mut borrows, at least not
@@ -20,12 +15,23 @@ fn new_scope() -> Scope {
     Rc::new(RefCell::new(HashMap::new()))
 }
 
-struct Resolver {
+pub struct Resolver {
     interpreter: Interpreter,
     scopes: Scopes,
 }
 
 impl Resolver {
+    pub fn new(interpreter: Interpreter) -> Resolver {
+        Resolver {
+            interpreter,
+            scopes: Scopes::new(),
+        }
+    }
+
+    pub fn destruct(self) -> Interpreter {
+        self.interpreter
+    }
+
     fn resolve_statements(&mut self, statements: &Vec<Statement>) -> Result<(), LoxError> {
         for statement in statements {
             self.resolve_statement(statement)?
@@ -125,7 +131,7 @@ impl Resolver {
         Ok(())
     }
 
-    fn resolve_statement(&mut self, statement: &Statement) -> Result<(), LoxError> {
+    pub fn resolve_statement(&mut self, statement: &Statement) -> Result<(), LoxError> {
         match statement {
             Statement::Print(expr) => {
                 self.resolve_expression(expr)?;

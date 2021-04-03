@@ -1,4 +1,4 @@
-use crate::interpreter::{AstPrinter, Environment, Interpreter};
+use crate::{interpreter::{AstPrinter, Environment, Interpreter}, resolver::Resolver};
 use crate::{
     builtins::clock,
     parser::{Expression, Parser},
@@ -211,22 +211,16 @@ impl Lox {
             .borrow_mut()
             .define("clock".to_owned(), clock);
 
-        let mut interpreter = Interpreter::with_env(environment.clone());
+        let interpreter = Interpreter::with_env(environment.clone());
+        let mut resolver = Resolver::new(interpreter);
 
+        for statement in &statements {
+            resolver.resolve_statement(statement)?;
+        }
+
+        let mut interpreter = resolver.destruct();
         for statement in statements {
-            if TRACE {
-                println!(
-                    ">>> Environment before statement env={}",
-                    environment.clone().borrow().to_string()
-                );
-            }
             interpreter.interpret_statement(statement)?;
-            if TRACE {
-                println!(
-                    ">>> Environment after statement env={}",
-                    environment.clone().borrow().to_string()
-                );
-            }
         }
 
         Ok(())

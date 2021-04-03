@@ -23,6 +23,13 @@ fn new_scope() -> Scope {
 pub struct Resolver {
     interpreter: Interpreter,
     scopes: Scopes,
+    current_function: FunctionType,
+}
+
+type FunctionType = Option<()>;
+
+fn is_function(ft: FunctionType) -> bool {
+    ft.is_some()
 }
 
 impl Resolver {
@@ -30,6 +37,7 @@ impl Resolver {
         Resolver {
             interpreter,
             scopes: vec![new_scope()],
+            current_function: None,
         }
     }
 
@@ -96,7 +104,8 @@ impl Resolver {
         }
     }
 
-    fn resolve_function(&mut self, statement: &Statement) -> Result<(), LoxError> {
+    fn resolve_function(&mut self, statement: &Statement, function_type: FunctionType) -> Result<(), LoxError> {
+        let mut enclosing_function = std::mem::replace(&mut self.current_function, function_type);
         if let Statement::Function(_name, params, body) = statement {
             self.begin_scope();
             for param in params {
@@ -106,6 +115,7 @@ impl Resolver {
             self.resolve_statements(body)?;
             self.end_scope();
         }
+        std::mem::swap(&mut enclosing_function, &mut self.current_function);
         Ok(())
     }
 
@@ -188,7 +198,7 @@ impl Resolver {
             Statement::Function(name, _, _) => {
                 self.declare(&name)?;
                 self.define(&name);
-                self.resolve_function(&statement)?;
+                self.resolve_function(&statement, Some(()))?;
             }
             Statement::While(cond, stmt) => {
                 crate::lox::trace(format!(
@@ -198,7 +208,14 @@ impl Resolver {
                 self.resolve_expression(cond)?;
                 self.resolve_statement(&stmt)?;
             }
-            Statement::Return(_keywd, expr) => {
+            Statement::Return(keyword, expr) => {
+                if ! is_function(self.current_function) {
+                    return Err(crate::lox::parse_error(
+                        keyword.clone(),
+                        LoxErrorType::FunctionCallError,
+                        ""
+                    ))
+                }
                 self.resolve_expression(expr)?;
             }
             Statement::None => (),

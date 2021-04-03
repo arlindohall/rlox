@@ -53,11 +53,11 @@ pub enum Expression {
     Variable(ExpressionId, Token),
 }
 
-pub type ExpressionId = String;
+pub type ExpressionId = u128;
 
 impl Expression {
     fn assignment(name: Token, value: Expression) -> Expression {
-        Expression::Assignment(Uuid::new_v4().to_string(), name, Box::new(value))
+        Expression::Assignment(Uuid::new_v4().as_u128(), name, Box::new(value))
     }
 
     fn binary(l: Expression, t: Token, r: Expression) -> Expression {
@@ -81,16 +81,16 @@ impl Expression {
     }
 
     fn variable(t: Token) -> Expression {
-        Expression::Variable(Uuid::new_v4().to_string(), t)
+        Expression::Variable(Uuid::new_v4().as_u128(), t)
     }
 
     fn call(callee: Expression, paren: Token, params: Vec<Expression>) -> Expression {
         Expression::Call(Box::new(callee), paren, params)
     }
 
-    pub fn get_id(&self) -> String {
+    pub fn get_id(&self) -> ExpressionId {
         match self {
-            Expression::Variable(id, _) | Expression::Assignment(id, _, _) => id.clone(),
+            Expression::Variable(id, _) | Expression::Assignment(id, _, _) => *id,
             _ => panic!(format!(
                 "Unrecoverable lox error to get expression id for expression {:?}",
                 self

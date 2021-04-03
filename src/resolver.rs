@@ -76,10 +76,18 @@ impl Resolver {
         self.scopes.get(self.scopes.len() - 1).map(|sc| sc.clone())
     }
 
-    fn declare(&mut self, name: &Token) {
+    fn declare(&mut self, name: &Token) -> Result<(), LoxError> {
         if let Some(scope) = self.peek() {
+            if scope.borrow().contains_key(&name.lexeme) {
+                return Err(crate::lox::parse_error(
+                    name.clone(),
+                    LoxErrorType::DefinitionError,
+                    "already a variable with this name in scope"
+                ));
+            }
             scope.borrow_mut().insert(name.lexeme.to_string(), false);
         }
+        Ok(())
     }
 
     fn define(&self, name: &Token) {
@@ -92,7 +100,7 @@ impl Resolver {
         if let Statement::Function(_name, params, body) = statement {
             self.begin_scope();
             for param in params {
-                self.declare(param);
+                self.declare(param)?;
                 self.define(param);
             }
             self.resolve_statements(body)?;
@@ -164,7 +172,7 @@ impl Resolver {
                 self.end_scope();
             }
             Statement::Var(name, value) => {
-                self.declare(&name);
+                self.declare(&name)?;
                 if let Some(val) = value {
                     self.resolve_expression(val)?;
                 }
@@ -178,7 +186,7 @@ impl Resolver {
                 }
             }
             Statement::Function(name, _, _) => {
-                self.declare(&name);
+                self.declare(&name)?;
                 self.define(&name);
                 self.resolve_function(&statement)?;
             }

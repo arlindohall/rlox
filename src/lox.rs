@@ -80,6 +80,9 @@ pub enum LoxError {
         message: String,
         err_type: LoxErrorType,
     },
+    LoxErrorList {
+        errors: Vec<LoxError>,
+    },
     ReturnPseudoError {
         value: LoxObject,
     },
@@ -91,12 +94,14 @@ impl LoxError {
             LoxError::ScanError { err_type, .. } => format!("{:?}", err_type),
             LoxError::ParseError { err_type, .. } => format!("{:?}", err_type),
             LoxError::RuntimeError { err_type, .. } => format!("{:?}", err_type),
+            LoxError::LoxErrorList { .. } => format!("ErrorList"),
             LoxError::ReturnPseudoError { value: _ } => "return".to_string(),
         };
         let message = match self {
             LoxError::ScanError { message, .. } => message.to_string(),
             LoxError::ParseError { message, .. } => message.to_string(),
             LoxError::RuntimeError { message, .. } => message.to_string(),
+            LoxError::LoxErrorList { errors } => errors.iter().map(|e| e.to_string()).collect::<Vec<String>>().join(", "),
             LoxError::ReturnPseudoError { value } => value.to_string(),
         };
         format!("({:?}) --- {}", err_type, message)
@@ -217,8 +222,16 @@ impl Lox {
         let interpreter = Interpreter::with_env(environment.clone());
         let mut resolver = Resolver::new(interpreter);
 
+        let mut errors = Vec::new();
         for statement in &statements {
-            resolver.resolve_statement(statement)?;
+            let result = resolver.resolve_statement(statement);
+            if let Err(e) = result {
+                errors.push(e);
+            }
+        }
+
+        if errors.len() > 0 {
+            return Err(LoxError::LoxErrorList { errors });
         }
 
         let mut interpreter = resolver.destruct();

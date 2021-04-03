@@ -45,9 +45,10 @@ later.
 pub struct Interpreter {
     pub environment: SharedEnvironment,
     locals: Locals,
+    globals: SharedEnvironment,
 }
 
-type Locals = HashMap<Expression, usize>;
+type Locals = HashMap<Expression, u16>;
 
 fn take_parent(env: &SharedEnvironment) -> SharedEnvironment {
     env.clone().borrow().enclosing.clone().unwrap()
@@ -124,13 +125,45 @@ impl AstPrinter for Statement {
 impl Interpreter {
     pub fn with_env(environment: SharedEnvironment) -> Interpreter {
         Interpreter {
+            globals: environment.clone(),
             environment,
             locals: HashMap::new(),
         }
     }
 
-    pub fn resolve(&mut self, expression: Expression, i: usize) {
+    pub fn resolve(&mut self, expression: Expression, i: u16) {
         self.locals.insert(expression, i);
+    }
+
+    fn lookup_variable(&self, name: Token, expression: Expression) -> Result<LoxObject, LoxError> {
+        let distance = self.locals.get(&expression);
+        crate::lox::trace(format!(
+            ">>> Looking for variable name={}, dist={:?}, env={}",
+            name.lexeme,
+            &distance,
+            self.environment.borrow().to_string(),
+        ));
+        match distance {
+            Some(dist) => self.get_at(*dist, expression, name),
+            None => self.globals.borrow().get(expression, name),
+        }
+    }
+
+    fn get_at(&self, distance: u16, expression: Expression, name: Token) -> Result<LoxObject, LoxError> {
+        self.ancestor(distance).borrow().get(expression, name)
+    }
+
+    fn assign_at(&self, distance: u16, expression: Expression, name: Token, value: LoxObject) -> Result<(), LoxError> {
+        self.ancestor(distance).borrow_mut().assign(expression, name, value)
+    }
+
+    fn ancestor(&self, mut distance: u16) -> SharedEnvironment {
+        let mut env = self.environment.clone();
+        while distance <= (1 as u16) {
+            env = self.environment.borrow().enclosing.clone().unwrap();
+            distance -= 1;
+        }
+        env
     }
 
     fn interpret_expression(&mut self, expression: Expression) -> Result<LoxObject, LoxError> {
@@ -234,26 +267,25 @@ impl Interpreter {
                     _ => panic!("unimplemented binary operator"),
                 }
             }
-            Expression::Variable(token) => self
-                .environment
-                .borrow()
-                .get(expression.clone(), token.clone()),
+            Expression::Variable(token) => self.lookup_variable(token, expression),
             Expression::Assignment(name, value) => {
                 // TODO: This clone could be super expensive, if the whole program is one assignment
                 crate::lox::trace(format!(
                     ">>> Modifying environment={}",
                     self.environment.borrow().to_string(),
                 ));
-                let result = self.interpret_expression(*value.clone())?;
-                self.environment
-                    .borrow_mut()
-                    .assign(*value, name, result.clone())?;
+                let value = self.interpret_expression(*value.clone())?;
+                let distance = self.locals.get(&expression);
+                match distance {
+                    Some(dist) => self.assign_at(*dist, expression, name, value.clone()),
+                    None => self.globals.borrow_mut().assign(expression, name, value.clone()),
+                }?;
                 crate::lox::trace(format!(
                     ">>> Done modifying environment={}",
                     self.environment.borrow().to_string()
                 ));
 
-                Ok(result)
+                Ok(value)
             }
             Expression::Logical(l, op, r) => {
                 let left = self.interpret_expression(*l)?;

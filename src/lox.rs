@@ -15,6 +15,7 @@ pub type LoxNumber = f64; // Numbers are floats, can be improved
 type ReservedWord = (&'static str, TokenType);
 
 pub static TRACE: bool = false;
+pub static LOG: bool = true;
 
 static mut HAD_ERROR: bool = false;
 static mut HAD_RUNTIME_ERROR: bool = false;
@@ -40,6 +41,12 @@ static RESERVED_WORDS: &[ReservedWord] = &[
 
 pub fn trace(message: String) {
     if TRACE {
+        println!("{}", message);
+    }
+}
+
+pub fn _log(message: String) {
+    if LOG {
         println!("{}", message);
     }
 }

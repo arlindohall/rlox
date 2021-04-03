@@ -34,7 +34,7 @@ impl Resolver {
     }
 
     fn resolve_local(&mut self, expr: &Expression, name: &Token) {
-        let mut i = self.scopes.len();
+        let mut i = self.scopes.len() as u16;
         for scope in self.scopes.iter().rev() {
             i -= 1;
             if scope.borrow().contains_key(&name.lexeme) {

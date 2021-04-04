@@ -49,6 +49,7 @@ pub enum Expression {
     Logical(Box<Expression>, Token, Box<Expression>),
     Unary(Token, Box<Expression>),
     Call(Box<Expression>, Token, Vec<Expression>),
+    Get(Box<Expression>, Token),
     Variable(ExpressionId, Token),
 }
 
@@ -85,6 +86,10 @@ impl Expression {
 
     fn call(callee: Expression, paren: Token, params: Vec<Expression>) -> Expression {
         Expression::Call(Box::new(callee), paren, params)
+    }
+
+    fn get(object: Expression, name: Token) -> Expression {
+        Expression::Get(Box::new(object), name)
     }
 
     pub fn get_id(&self) -> ExpressionId {
@@ -603,6 +608,9 @@ impl Parser {
         loop {
             if self.match_token(TokenType::LeftParen) {
                 expr = self.finish_call(expr)?;
+            } else if self.match_token(TokenType::Dot) {
+                let name = self.consume(TokenType::Identifier, "expect property name after '.'")?;
+                expr = Expression::get(expr, name);
             } else {
                 break;
             }

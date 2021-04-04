@@ -126,6 +126,7 @@ pub enum LoxErrorType {
     DivideByZeroError,
     AssignmentError,
     FunctionCallError,
+    PropertyError,
 
     SystemError,
 }

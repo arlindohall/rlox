@@ -164,6 +164,9 @@ impl Resolver {
                     self.resolve_expression(param)?;
                 }
             }
+            Expression::Get(object, _name) => {
+                self.resolve_expression(object)?;
+            }
             Expression::Variable(_, name) => {
                 if let Some(scope) = self.peek() {
                     if scope.borrow().contains_key(&name.lexeme)

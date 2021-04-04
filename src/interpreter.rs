@@ -74,6 +74,7 @@ impl AstPrinter for Expression {
                 let args: Vec<String> = args.iter().map(|arg| arg.to_string()).collect();
                 format!("({} {})", callee.to_string(), args.join(" "))
             }
+            Expression::Get(object, name) => format!("{}.{}", object.to_string(), name.lexeme),
             Expression::Variable(_, t) => format!("{}", t.lexeme),
         }
     }
@@ -368,6 +369,15 @@ impl Interpreter {
                     ))
                 } else {
                     func.call(self, arguments)
+                }
+            }
+            Expression::Get(object, _name) => {
+                let object = self.interpret_expression(*object)?;
+                if let LoxObject::Object(_class) = object {
+                    todo!()
+                    // Ok(values.get(name.lexeme))
+                } else {
+                    Err(crate::lox::runtime_error(expression, LoxErrorType::PropertyError, "only instances have properties"))
                 }
             }
         }

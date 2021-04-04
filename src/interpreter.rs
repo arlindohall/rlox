@@ -592,12 +592,16 @@ impl LoxCallable {
                 &format!("exception trying to call non-function"),
             ))
         };
-        match &object {
+        match object {
             // TODO: This is a total guess but I have a feeling we're heading somewhere like this
             LoxObject::Function(f) => Ok(f.clone()),
-            LoxObject::Object(vals) => match vals.get("__call") {
-                Some(obj) => Self::try_from(*(obj.clone())),
-                None => err(object),
+            LoxObject::Object(class) => {
+                panic!(class);
+                // I removed objects but I'd like to make instances callable still, later
+                // match values.get("__call") {
+                //     Some(obj) => Self::try_from(*(obj.clone())),
+                //     None => err(object),
+                // }
             },
             LoxObject::Class(class) => {
                 Ok(LoxCallable {
@@ -607,7 +611,7 @@ impl LoxCallable {
                     name: class.name.clone(),
                 })
             }
-            _ => err(object),
+            _ => err(object.clone()),
         }
     }
 
@@ -658,7 +662,7 @@ impl LoxCallable {
             }
             Executable::Native(f) => f(args),
             Executable::Constructor(class) => {
-                Ok(LoxObject::Instance(class))
+                Ok(LoxObject::Object(class))
             }
         }
     }

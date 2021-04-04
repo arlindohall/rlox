@@ -140,6 +140,7 @@ pub enum LoxObject {
     String(String),
     Number(LoxNumber),
     Object(HashMap<String, Box<LoxObject>>),
+    Class(String),
     Function(LoxCallable),
     Nil,
 }
@@ -153,6 +154,7 @@ impl LoxObject {
             // TODO: maybe actually print objects
             LoxObject::Object(_) => String::from("<Object>"),
             LoxObject::Function(callable) => callable.to_string(),
+            LoxObject::Class(name) => name.clone(),
             LoxObject::Nil => String::from("nil"),
         }
     }
@@ -164,6 +166,7 @@ impl LoxObject {
             LoxObject::Number(_) => "Number",
             LoxObject::Object(_) => "Object",
             LoxObject::Function(_) => "Function",
+            LoxObject::Class(_) => "Class",
             LoxObject::Nil => "Nil",
         };
 
@@ -176,12 +179,20 @@ pub enum Statement {
     Print(Expression),
     Expression(Expression),
     Block(Vec<Statement>),
+    Class(Token, Vec<FunctionDefinition>),
     Var(Token, Option<Expression>),
     If(Expression, Box<Statement>, Option<Box<Statement>>),
-    Function(Token, Vec<Token>, Vec<Statement>),
+    Function(FunctionDefinition),
     While(Expression, Box<Statement>),
     Return(Token, Expression),
     None,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct FunctionDefinition {
+    pub name: Token,
+    pub params: Vec<Token>,
+    pub body: Vec<Statement>,
 }
 
 pub struct Parser {
@@ -232,7 +243,10 @@ impl Parser {
     }
 
     fn declaration(&mut self) -> Result<Statement, LoxError> {
-        let declr = if self.match_token(TokenType::Fun) {
+        let declr = 
+        if self.match_token(TokenType::Class) {
+            self.class_declaration()
+        } else if self.match_token(TokenType::Fun) {
             self.function("function")
         } else if self.match_token(TokenType::Var) {
             self.var_declaration()
@@ -249,7 +263,24 @@ impl Parser {
         }
     }
 
+    fn class_declaration(&mut self) -> Result<Statement, LoxError> {
+        let name = self.consume(TokenType::Identifier, "expect class name")?;
+        self.consume(TokenType::LeftBrace, "expect '{' before class body")?;
+
+        let mut methods = Vec::new();
+        while !self.check(TokenType::RightBrace) && !self.is_at_end() {
+            methods.push(self.function_definition("method")?);
+        }
+
+        self.consume(TokenType::RightBrace, "expect '}' after class body")?;
+        Ok(Statement::Class(name, methods))
+    }
+
     fn function(&mut self, kind: &str) -> Result<Statement, LoxError> {
+        Ok(Statement::Function(self.function_definition(kind)?))
+    }
+
+    fn function_definition(&mut self, kind: &str) -> Result<FunctionDefinition, LoxError> {
         let name = self.consume(TokenType::Identifier, &format!("expect {} name", kind))?;
         self.consume(
             TokenType::LeftParen,
@@ -282,7 +313,7 @@ impl Parser {
             &format!("expect '{{' before {} body", kind),
         )?;
         let body = self.block()?;
-        Ok(Statement::Function(name, params, body))
+        Ok(FunctionDefinition { name, params, body })
     }
 
     fn var_declaration(&mut self) -> Result<Statement, LoxError> {

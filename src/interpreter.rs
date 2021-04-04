@@ -107,20 +107,28 @@ impl AstPrinter for Statement {
                 do_st.to_string()
             ),
             Statement::Return(_keyword, value) => format!("(return {})", value.to_string()),
-            Statement::Function(name, params, body) => format!(
+            Statement::Function(definition) => format!(
                 "(define ({} {}) ({}))",
-                name.lexeme,
-                params
+                definition.name.lexeme,
+                definition.params
                     .iter()
                     .map(|p| p.lexeme.to_owned())
                     .collect::<Vec<String>>()
                     .join(" "),
-                body.iter()
+                definition.body.iter()
                     .map(|s| s.clone().to_string())
                     .collect::<Vec<String>>()
                     .join(" "),
             ),
             Statement::None => "()".to_owned(),
+            Statement::Class(name, definition) => format!(
+                "(class {} ({}))",
+                name.lexeme,
+                definition.iter()
+                    .map(|f| Statement::Function(f.clone()).to_string())
+                    .collect::<Vec<String>>()
+                    .join(" ")
+            )
         }
     }
 }
@@ -430,20 +438,26 @@ impl Interpreter {
                 let value = self.interpret_expression(expression)?;
                 Err(LoxError::ReturnPseudoError { value })
             }
-            Statement::Function(name, params, body) => {
-                let params = params.iter().map(|param| param.lexeme.to_owned()).collect();
+            Statement::Function(definition) => {
+                let params = definition.params.iter().map(|param| param.lexeme.to_owned()).collect();
                 // TODO: when creating closures will have to do some unsafe wizardry
                 // in order for function environments to point back to the functions
                 let func = LoxObject::Function(LoxCallable::interpreted(
-                    name.lexeme.clone(),
+                    definition.name.lexeme.clone(),
                     params,
-                    body,
+                    definition.body,
                     self.environment.clone(),
                 ));
-                self.environment.borrow_mut().define(name.lexeme, func);
+                self.environment.borrow_mut().define(definition.name.lexeme, func);
                 Ok(LoxObject::Nil)
             }
             Statement::None => Ok(LoxObject::Nil),
+            Statement::Class(name, _definition) => {
+                self.environment.borrow_mut().define(name.lexeme.clone(), LoxObject::Nil);
+                let _class = LoxObject::Class(name.lexeme);
+                todo!()
+                // self.environment.borrow_mut().assign(name.lexeme, class)
+            }
         }
     }
 }

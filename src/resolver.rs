@@ -106,13 +106,13 @@ impl Resolver {
 
     fn resolve_function(&mut self, statement: &Statement, function_type: FunctionType) -> Result<(), LoxError> {
         let mut enclosing_function = std::mem::replace(&mut self.current_function, function_type);
-        if let Statement::Function(_name, params, body) = statement {
+        if let Statement::Function(definition) = statement {
             self.begin_scope();
-            for param in params {
-                self.declare(param)?;
-                self.define(param);
+            for param in definition.params.iter() {
+                self.declare(&param)?;
+                self.define(&param);
             }
-            self.resolve_statements(body)?;
+            self.resolve_statements(&definition.body)?;
             self.end_scope();
         }
         std::mem::swap(&mut enclosing_function, &mut self.current_function);
@@ -195,9 +195,9 @@ impl Resolver {
                     self.resolve_statement(&stmt)?;
                 }
             }
-            Statement::Function(name, _, _) => {
-                self.declare(&name)?;
-                self.define(&name);
+            Statement::Function(definition) => {
+                self.declare(&definition.name)?;
+                self.define(&definition.name);
                 self.resolve_function(&statement, Some(()))?;
             }
             Statement::While(cond, stmt) => {
@@ -219,6 +219,10 @@ impl Resolver {
                 self.resolve_expression(expr)?;
             }
             Statement::None => (),
+            Statement::Class(name, _functions) => {
+                self.declare(name)?;
+                self.define(name);
+            }
         }
         Ok(())
     }

@@ -9,6 +9,24 @@ use crate::{
     scanner::Token,
 };
 
+/*******************************************************************************
+********************************************************************************
+                                RESOLVER
+********************************************************************************
+
+The resolver walks the parse tree just like the interpreter, but instead of
+tracking an environment and evaluating expressions, it only takes action on
+variable or assignment expressions. The resolver adds each of these
+expressions to a map by a unique id, which is held by the expression itself.
+The map of expressions contains the number of "jumps" that are needed to
+reach the variable in question in the environment.
+
+The resolver uses private types to track all of this state, Scope and Scopes,
+so that the internals can be changed without affecting the rest of the
+interpreter.
+
+*******************************************************************************/
+
 // Scope needs to be borrowed mutably by peek in a way
 // that can't be done with &mut borrows, at least not
 // without a little more effort than I want to put in

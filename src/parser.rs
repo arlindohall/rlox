@@ -139,10 +139,16 @@ pub enum LoxObject {
     Boolean(bool),
     String(String),
     Number(LoxNumber),
-    Object(HashMap<String, Box<LoxObject>>),
-    Class(String),
+    Object(HashMap<String, Box<LoxObject>>), // TODO: I don't think there's actually objects?
+    Class(LoxClass),
+    Instance(LoxClass),
     Function(LoxCallable),
     Nil,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct LoxClass {
+    pub name: String,
 }
 
 impl LoxObject {
@@ -154,7 +160,8 @@ impl LoxObject {
             // TODO: maybe actually print objects
             LoxObject::Object(_) => String::from("<Object>"),
             LoxObject::Function(callable) => callable.to_string(),
-            LoxObject::Class(name) => name.clone(),
+            LoxObject::Class(class) => class.name.clone(),
+            LoxObject::Instance(class) => format!("<{}>", class.name),
             LoxObject::Nil => String::from("nil"),
         }
     }
@@ -167,6 +174,7 @@ impl LoxObject {
             LoxObject::Object(_) => "Object",
             LoxObject::Function(_) => "Function",
             LoxObject::Class(_) => "Class",
+            LoxObject::Instance(_) => "Instance",
             LoxObject::Nil => "Nil",
         };
 

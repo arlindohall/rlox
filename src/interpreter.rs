@@ -1,6 +1,6 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
-use crate::parser::{Expression, LoxObject, Statement};
+use crate::parser::{Expression, LoxClass, LoxObject, Statement};
 use crate::scanner::{Token, TokenType};
 use crate::{
     lox::{LoxError, LoxErrorType},
@@ -454,7 +454,7 @@ impl Interpreter {
             Statement::None => Ok(LoxObject::Nil),
             Statement::Class(name, _definition) => {
                 self.environment.borrow_mut().define(name.lexeme.clone(), LoxObject::Nil);
-                let _class = LoxObject::Class(name.lexeme);
+                let _class = LoxObject::Class(LoxClass { name: name.lexeme });
                 todo!()
                 // self.environment.borrow_mut().assign(name.lexeme, class)
             }
@@ -546,6 +546,7 @@ impl PartialEq for LoxCallable {
 
 #[derive(Clone)]
 enum Executable {
+    Constructor(LoxClass),
     Interpreted(Vec<Statement>, Vec<String>),
     Native(fn(Vec<LoxObject>) -> Result<LoxObject, LoxError>),
 }
@@ -588,7 +589,7 @@ impl LoxCallable {
             Err(crate::lox::runtime_error(
                 Expression::Literal(object),
                 LoxErrorType::FunctionCallError,
-                &format!(""),
+                &format!("exception trying to call non-function"),
             ))
         };
         match &object {
@@ -598,6 +599,14 @@ impl LoxCallable {
                 Some(obj) => Self::try_from(*(obj.clone())),
                 None => err(object),
             },
+            LoxObject::Class(class) => {
+                Ok(LoxCallable {
+                    arity: 0,
+                    closure: Environment::new(),
+                    exec: Executable::Constructor(class.clone()),
+                    name: class.name.clone(),
+                })
+            }
             _ => err(object),
         }
     }
@@ -648,6 +657,9 @@ impl LoxCallable {
                 result
             }
             Executable::Native(f) => f(args),
+            Executable::Constructor(class) => {
+                Ok(LoxObject::Instance(class))
+            }
         }
     }
 }

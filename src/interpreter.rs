@@ -74,6 +74,7 @@ impl AstPrinter for Expression {
                 let args: Vec<String> = args.iter().map(|arg| arg.to_string()).collect();
                 format!("({} {})", callee.to_string(), args.join(" "))
             }
+            Expression::Set(object, name, value) => format!("{}.{} = {}", object.to_string(), name.lexeme, value.to_string()),
             Expression::Get(object, name) => format!("{}.{}", object.to_string(), name.lexeme),
             Expression::Variable(_, t) => format!("{}", t.lexeme),
         }
@@ -369,6 +370,19 @@ impl Interpreter {
                     ))
                 } else {
                     func.call(self, arguments)
+                }
+            }
+            Expression::Set(object, name, value) => {
+                let object = self.interpret_expression(*object)?;
+
+                if let LoxObject::Object(_class, mut fields) = object {
+                    let value = self.interpret_expression(*value)?;
+                    fields.insert(name.lexeme, value.clone());
+                    // TODO, and this will probably be far-reaching, object fields need to be Rc references.
+                    // this will appear as a bug where object state changes aren't persisted
+                    Ok(value.clone())
+                } else {
+                    Err(crate::lox::runtime_error(expression, LoxErrorType::PropertyError, "only instances have fields"))
                 }
             }
             Expression::Get(object, name) => {

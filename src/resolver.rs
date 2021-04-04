@@ -164,6 +164,10 @@ impl Resolver {
                     self.resolve_expression(param)?;
                 }
             }
+            Expression::Set(object, _name, value) => {
+                self.resolve_expression(value)?;
+                self.resolve_expression(object)?;
+            }
             Expression::Get(object, _name) => {
                 self.resolve_expression(object)?;
             }

@@ -51,6 +51,7 @@ pub enum Expression {
     Logical(Box<Expression>, Token, Box<Expression>),
     Unary(Token, Box<Expression>),
     Call(Box<Expression>, Token, Vec<Expression>),
+    Set(Box<Expression>, Token, Box<Expression>),
     Get(Box<Expression>, Token),
     Variable(ExpressionId, Token),
 }
@@ -92,6 +93,10 @@ impl Expression {
 
     fn get(object: Expression, name: Token) -> Expression {
         Expression::Get(Box::new(object), name)
+    }
+
+    fn set(object: Expression, name: Token, value: Expression) -> Expression {
+        Expression::Set(Box::new(object), name, Box::new(value))
     }
 
     pub fn get_id(&self) -> ExpressionId {
@@ -493,17 +498,17 @@ impl Parser {
     }
 
     fn assignment(&mut self) -> Result<Expression, LoxError> {
-        let expr = self.or();
+        let expr = self.or()?;
 
         // If this is an assignment, parse the RHS as a normal expression
         if self.match_token(TokenType::Equal) {
             let _equals = self.previous();
             let value = self.assignment()?;
 
-            // If the left hand side is a valid assignment target, make the assignment
-            // According to the book, we'll revisit this
-            if let Ok(Expression::Variable(_, token)) = expr {
+            if let Expression::Variable(_, token) = expr {
                 return Ok(Expression::assignment(token, value));
+            } else if let Expression::Get(object, name) = expr {
+                return Ok(Expression::set(*object, name, value))
             } else {
                 // If it's not valid, report and continue
                 crate::lox::runtime_error(
@@ -516,7 +521,7 @@ impl Parser {
 
         // If it turned out not to be an assignment or was invalid, return the
         // LHS as an expression only
-        expr
+        Ok(expr)
     }
 
     fn or(&mut self) -> Result<Expression, LoxError> {

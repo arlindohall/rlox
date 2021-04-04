@@ -1,4 +1,6 @@
 
+use std::collections::HashMap;
+
 use crate::scanner::{Token, TokenType};
 use crate::{
     interpreter::LoxCallable,
@@ -144,10 +146,12 @@ pub enum LoxObject {
     String(String),
     Number(LoxNumber),
     Class(LoxClass),
-    Object(LoxClass),
+    Object(LoxClass, ObjectValues),
     Function(LoxCallable),
     Nil,
 }
+
+type ObjectValues = HashMap<String, LoxObject>;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct LoxClass {
@@ -163,7 +167,7 @@ impl LoxObject {
             // TODO: maybe actually print objects
             LoxObject::Function(callable) => callable.to_string(),
             LoxObject::Class(class) => class.name.clone(),
-            LoxObject::Object(class) => format!("<{}>", class.name),
+            LoxObject::Object(class, _) => format!("<{}>", class.name),
             LoxObject::Nil => String::from("nil"),
         }
     }
@@ -175,7 +179,7 @@ impl LoxObject {
             LoxObject::Number(_) => "Number",
             LoxObject::Function(_) => "Function",
             LoxObject::Class(_) => "Class",
-            LoxObject::Object(_) => "Instance",
+            LoxObject::Object(_, _) => "Instance",
             LoxObject::Nil => "Nil",
         };
 

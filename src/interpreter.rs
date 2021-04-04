@@ -371,11 +371,13 @@ impl Interpreter {
                     func.call(self, arguments)
                 }
             }
-            Expression::Get(object, _name) => {
+            Expression::Get(object, name) => {
                 let object = self.interpret_expression(*object)?;
-                if let LoxObject::Object(_class) = object {
-                    todo!()
-                    // Ok(values.get(name.lexeme))
+                if let LoxObject::Object(_class, values) = object {
+                    match values.get(&name.lexeme) {
+                        Some(val) => Ok(val.clone()),
+                        None => Err(crate::lox::runtime_error(expression, LoxErrorType::PropertyError, &format!("undefined property {}", &name.lexeme))),
+                    }
                 } else {
                     Err(crate::lox::runtime_error(expression, LoxErrorType::PropertyError, "only instances have properties"))
                 }
@@ -602,16 +604,14 @@ impl LoxCallable {
                 &format!("exception trying to call non-function"),
             ))
         };
-        match object {
+        match object.clone() {
             // TODO: This is a total guess but I have a feeling we're heading somewhere like this
             LoxObject::Function(f) => Ok(f.clone()),
-            LoxObject::Object(class) => {
-                panic!(class);
-                // I removed objects but I'd like to make instances callable still, later
-                // match values.get("__call") {
-                //     Some(obj) => Self::try_from(*(obj.clone())),
-                //     None => err(object),
-                // }
+            LoxObject::Object(_class, values) => {
+                match values.get("__call") {
+                    Some(obj) => Self::try_from(obj.clone()),
+                    None => err(object),
+                }
             },
             LoxObject::Class(class) => {
                 Ok(LoxCallable {
@@ -672,7 +672,7 @@ impl LoxCallable {
             }
             Executable::Native(f) => f(args),
             Executable::Constructor(class) => {
-                Ok(LoxObject::Object(class))
+                Ok(LoxObject::Object(class, HashMap::new()))
             }
         }
     }

@@ -5,7 +5,7 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc};
 use crate::{
     interpreter::Interpreter,
     lox::{LoxError, LoxErrorType},
-    parser::{Expression, Statement},
+    parser::{Expression, FunctionDefinition, Statement},
     scanner::Token,
 };
 
@@ -44,10 +44,26 @@ pub struct Resolver {
     current_function: FunctionType,
 }
 
-type FunctionType = Option<()>;
+enum FunctionType {
+    Function,
+    Method,
+    None,
+}
 
-fn is_function(ft: FunctionType) -> bool {
-    ft.is_some()
+impl FunctionType {
+    fn is_function(&self) -> bool {
+        match self {
+            &FunctionType::Function => true,
+            _ => false,
+        }
+    }
+
+    fn is_method(&self) -> bool {
+        match self {
+            &FunctionType::Method => true,
+            _ => false,
+        }
+    }
 }
 
 impl Resolver {
@@ -55,7 +71,7 @@ impl Resolver {
         Resolver {
             interpreter,
             scopes: vec![new_scope()],
-            current_function: None,
+            current_function: FunctionType::None,
         }
     }
 
@@ -124,19 +140,17 @@ impl Resolver {
 
     fn resolve_function(
         &mut self,
-        statement: &Statement,
+        definition: &FunctionDefinition,
         function_type: FunctionType,
     ) -> Result<(), LoxError> {
         let mut enclosing_function = std::mem::replace(&mut self.current_function, function_type);
-        if let Statement::Function(definition) = statement {
-            self.begin_scope();
-            for param in definition.params.iter() {
-                self.declare(&param)?;
-                self.define(&param);
-            }
-            self.resolve_statements(&definition.body)?;
-            self.end_scope();
+        self.begin_scope();
+        for param in definition.params.iter() {
+            self.declare(&param)?;
+            self.define(&param);
         }
+        self.resolve_statements(&definition.body)?;
+        self.end_scope();
         std::mem::swap(&mut enclosing_function, &mut self.current_function);
         Ok(())
     }
@@ -227,7 +241,7 @@ impl Resolver {
             Statement::Function(definition) => {
                 self.declare(&definition.name)?;
                 self.define(&definition.name);
-                self.resolve_function(&statement, Some(()))?;
+                self.resolve_function(&definition, FunctionType::Function)?;
             }
             Statement::While(cond, stmt) => {
                 crate::lox::trace(format!(
@@ -238,7 +252,7 @@ impl Resolver {
                 self.resolve_statement(&stmt)?;
             }
             Statement::Return(keyword, expr) => {
-                if !is_function(self.current_function) {
+                if !self.current_function.is_function() {
                     return Err(crate::lox::parse_error(
                         keyword.clone(),
                         LoxErrorType::FunctionCallError,
@@ -248,9 +262,13 @@ impl Resolver {
                 self.resolve_expression(expr)?;
             }
             Statement::None => (),
-            Statement::Class(name, _functions) => {
+            Statement::Class(name, methods) => {
                 self.declare(name)?;
                 self.define(name);
+
+                for method in methods {
+                    self.resolve_function(method, FunctionType::Method)?;
+                }
             }
         }
         Ok(())

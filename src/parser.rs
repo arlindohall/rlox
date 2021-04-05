@@ -1,10 +1,12 @@
+use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
-use std::collections::HashMap;
-
-use crate::scanner::{Token, TokenType};
 use crate::{
     interpreter::LoxCallable,
     lox::{FileLocation, LoxError, LoxErrorType, LoxNumber},
+};
+use crate::{
+    interpreter::ObjectRef,
+    scanner::{Token, TokenType},
 };
 use uuid::Uuid;
 
@@ -47,7 +49,7 @@ pub enum Expression {
     Assignment(ExpressionId, Token, Box<Expression>),
     Binary(Box<Expression>, Token, Box<Expression>),
     Grouping(Box<Expression>),
-    Literal(LoxObject),
+    Literal(ObjectRef),
     Logical(Box<Expression>, Token, Box<Expression>),
     Unary(Token, Box<Expression>),
     Call(Box<Expression>, Token, Vec<Expression>),
@@ -71,7 +73,7 @@ impl Expression {
         Expression::Grouping(Box::new(e))
     }
 
-    fn literal(l: LoxObject) -> Expression {
+    fn literal(l: ObjectRef) -> Expression {
         Expression::Literal(l)
     }
 
@@ -109,10 +111,10 @@ impl Expression {
         }
     }
 
-    pub fn is_truthy(obj: LoxObject) -> bool {
-        match obj {
+    pub fn is_truthy(obj: ObjectRef) -> bool {
+        match *obj.borrow() {
             LoxObject::Nil => false,
-            LoxObject::Boolean(b) => b,
+            LoxObject::Boolean(b) => b.clone(),
             _ => true,
         }
     }
@@ -120,10 +122,10 @@ impl Expression {
     pub fn apply_compare(
         self,
         op: TokenType,
-        left: LoxObject,
-        right: LoxObject,
+        left: ObjectRef,
+        right: ObjectRef,
     ) -> Result<LoxObject, LoxError> {
-        if let (LoxObject::Number(l), LoxObject::Number(r)) = (left, right) {
+        if let (LoxObject::Number(l), LoxObject::Number(r)) = (&*left.borrow(), &*right.borrow()) {
             let result = match op {
                 TokenType::Greater => Ok(l > r),
                 TokenType::GreaterEqual => Ok(l >= r),
@@ -156,7 +158,7 @@ pub enum LoxObject {
     Nil,
 }
 
-type ObjectValues = HashMap<String, LoxObject>;
+type ObjectValues = HashMap<String, ObjectRef>;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct LoxClass {
@@ -189,6 +191,26 @@ impl LoxObject {
         };
 
         String::from(s)
+    }
+
+    pub fn wrap(self) -> ObjectRef {
+        Rc::new(RefCell::new(self))
+    }
+
+    pub fn set(&mut self, name: String, value: ObjectRef) {
+        match self {
+            LoxObject::Object(_, fields) => {
+                fields.insert(name, value);
+            }
+            _ => panic!(format!("cannot set property on {}", self.get_type())),
+        }
+    }
+
+    pub fn get(&self, name: &str) -> Option<ObjectRef> {
+        match self {
+            LoxObject::Object(_, fields) => fields.get(name).map(|val| val.clone()),
+            _ => None,
+        }
     }
 }
 
@@ -261,8 +283,7 @@ impl Parser {
     }
 
     fn declaration(&mut self) -> Result<Statement, LoxError> {
-        let declr = 
-        if self.match_token(TokenType::Class) {
+        let declr = if self.match_token(TokenType::Class) {
             self.class_declaration()
         } else if self.match_token(TokenType::Fun) {
             self.function("function")
@@ -421,7 +442,7 @@ impl Parser {
         body = match condition {
             Some(cond) => Statement::While(cond, Box::new(body)),
             None => Statement::While(
-                Expression::Literal(LoxObject::Boolean(true)),
+                Expression::Literal(LoxObject::Boolean(true).wrap()),
                 Box::new(body),
             ),
         };
@@ -467,7 +488,7 @@ impl Parser {
     fn return_statement(&mut self) -> Result<Statement, LoxError> {
         let keyword = self.previous();
         let value = if self.check(TokenType::Semicolon) {
-            Expression::Literal(LoxObject::Nil)
+            Expression::Literal(LoxObject::Nil.wrap())
         } else {
             self.expression()?
         };
@@ -508,7 +529,7 @@ impl Parser {
             if let Expression::Variable(_, token) = expr {
                 return Ok(Expression::assignment(token, value));
             } else if let Expression::Get(object, name) = expr {
-                return Ok(Expression::set(*object, name, value))
+                return Ok(Expression::set(*object, name, value));
             } else {
                 // If it's not valid, report and continue
                 crate::lox::runtime_error(
@@ -658,19 +679,19 @@ impl Parser {
 
     fn primary(&mut self) -> Result<Expression, LoxError> {
         if self.match_token(TokenType::False) {
-            Ok(Expression::literal(LoxObject::Boolean(false)))
+            Ok(Expression::literal(LoxObject::Boolean(false).wrap()))
         } else if self.match_token(TokenType::True) {
-            Ok(Expression::literal(LoxObject::Boolean(true)))
+            Ok(Expression::literal(LoxObject::Boolean(true).wrap()))
         } else if self.match_token(TokenType::Nil) {
-            Ok(Expression::literal(LoxObject::Nil))
+            Ok(Expression::literal(LoxObject::Nil.wrap()))
         } else if self.match_token(TokenType::Number) {
-            Ok(Expression::literal(LoxObject::Number(
-                self.previous().literal.get_number().unwrap(),
-            )))
+            Ok(Expression::literal(
+                LoxObject::Number(self.previous().literal.get_number().unwrap()).wrap(),
+            ))
         } else if self.match_token(TokenType::LoxString) {
-            Ok(Expression::literal(LoxObject::String(
-                self.previous().literal.get_string().unwrap(),
-            )))
+            Ok(Expression::literal(
+                LoxObject::String(self.previous().literal.get_string().unwrap()).wrap(),
+            ))
         } else if self.match_token(TokenType::Identifier) {
             Ok(Expression::variable(self.previous()))
         } else if self.match_token(TokenType::LeftParen) {

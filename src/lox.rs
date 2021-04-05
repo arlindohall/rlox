@@ -1,14 +1,12 @@
+use crate::scanner::{Scanner, Token, TokenType};
 use crate::{
     builtins::clock,
+    interpreter::ObjectRef,
     parser::{Expression, Parser},
 };
 use crate::{
     interpreter::{AstPrinter, Environment, Interpreter},
     resolver::Resolver,
-};
-use crate::{
-    parser::LoxObject,
-    scanner::{Scanner, Token, TokenType},
 };
 
 pub type LineNumber = u16; // 64K lines
@@ -84,7 +82,7 @@ pub enum LoxError {
         errors: Vec<LoxError>,
     },
     ReturnPseudoError {
-        value: LoxObject,
+        value: ObjectRef,
     },
 }
 
@@ -101,8 +99,12 @@ impl LoxError {
             LoxError::ScanError { message, .. } => message.to_string(),
             LoxError::ParseError { message, .. } => message.to_string(),
             LoxError::RuntimeError { message, .. } => message.to_string(),
-            LoxError::LoxErrorList { errors } => errors.iter().map(|e| e.to_string()).collect::<Vec<String>>().join(", "),
-            LoxError::ReturnPseudoError { value } => value.to_string(),
+            LoxError::LoxErrorList { errors } => errors
+                .iter()
+                .map(|e| e.to_string())
+                .collect::<Vec<String>>()
+                .join(", "),
+            LoxError::ReturnPseudoError { value } => value.borrow().to_string(),
         };
         format!("({:?}) --- {}", err_type, message)
     }
@@ -214,7 +216,7 @@ impl Lox {
         // TODO: maybe this should be structured so Lox doesn't need
         // to know what an environment is?
         let environment = Environment::new();
-        let clock = clock(environment.clone());
+        let clock = clock(environment.clone()).wrap();
         environment
             .clone()
             .borrow_mut()

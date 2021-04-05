@@ -108,7 +108,7 @@ impl Resolver {
                 return Err(crate::lox::parse_error(
                     name.clone(),
                     LoxErrorType::DefinitionError,
-                    "already a variable with this name in scope"
+                    "already a variable with this name in scope",
                 ));
             }
             scope.borrow_mut().insert(name.lexeme.to_string(), false);
@@ -122,7 +122,11 @@ impl Resolver {
         }
     }
 
-    fn resolve_function(&mut self, statement: &Statement, function_type: FunctionType) -> Result<(), LoxError> {
+    fn resolve_function(
+        &mut self,
+        statement: &Statement,
+        function_type: FunctionType,
+    ) -> Result<(), LoxError> {
         let mut enclosing_function = std::mem::replace(&mut self.current_function, function_type);
         if let Statement::Function(definition) = statement {
             self.begin_scope();
@@ -234,12 +238,12 @@ impl Resolver {
                 self.resolve_statement(&stmt)?;
             }
             Statement::Return(keyword, expr) => {
-                if ! is_function(self.current_function) {
+                if !is_function(self.current_function) {
                     return Err(crate::lox::parse_error(
                         keyword.clone(),
                         LoxErrorType::FunctionCallError,
-                        ""
-                    ))
+                        "",
+                    ));
                 }
                 self.resolve_expression(expr)?;
             }

@@ -5,7 +5,7 @@ use std::{
 };
 
 use crate::{
-    interpreter::{Environment, LoxCallable},
+    interpreter::{Environment, LoxCallable, ObjectRef},
     lox::{LoxError, LoxErrorType},
     parser::{Expression, LoxObject},
 };
@@ -13,11 +13,11 @@ use crate::{
 /*
  * Built-in clock function. We deviate from lox and show miliseconds.
  */
-fn clock_impl(_args: Vec<LoxObject>) -> Result<LoxObject, LoxError> {
+fn clock_impl(_args: Vec<ObjectRef>) -> Result<ObjectRef, LoxError> {
     match SystemTime::now().duration_since(UNIX_EPOCH) {
-        Ok(time) => Ok(LoxObject::Number(time.as_millis() as f64)),
+        Ok(time) => Ok(LoxObject::Number(time.as_millis() as f64).wrap()),
         Err(_err) => Err(crate::lox::runtime_error(
-            Expression::Literal(LoxObject::Nil),
+            Expression::Literal(LoxObject::Nil.wrap()),
             LoxErrorType::SystemError,
             "error getting system time",
         )),

@@ -193,7 +193,7 @@ impl LoxObject {
             LoxObject::Number(_) => "Number",
             LoxObject::Function(_) => "Function",
             LoxObject::Class(_) => "Class",
-            LoxObject::Object(_, _) => "Instance",
+            LoxObject::Object(_, _) => "Object", // TODO: maybe this should be instances to match the text
             LoxObject::Nil => "Nil",
         };
 

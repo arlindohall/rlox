@@ -403,14 +403,7 @@ impl Interpreter {
             Expression::Get(object, name) => {
                 let object = self.interpret_expression(*object)?;
                 if object.borrow().get_type() == "Object" {
-                    match object.borrow().get(&name.lexeme) {
-                        Some(val) => Ok(val),
-                        None => Err(crate::lox::runtime_error(
-                            expression,
-                            LoxErrorType::PropertyError,
-                            &format!("undefined property {}", &name.lexeme),
-                        )),
-                    }
+                    object.borrow().get(expression, &name.lexeme)
                 } else {
                     Err(crate::lox::runtime_error(
                         expression,
@@ -512,15 +505,18 @@ impl Interpreter {
                     .borrow_mut()
                     .define(name.lexeme.clone(), LoxObject::Nil.wrap());
 
-                let methods: Vec<ObjectRef> = definition
+                let methods: HashMap<String, ObjectRef> = definition
                         .iter()
                         .map(|FunctionDefinition {name, params, body}| {
                             let params = params.iter().map(|token| token.lexeme.clone()).collect();
-                            LoxObject::Function(
-                                LoxCallable::interpreted(name.lexeme.clone(), params, body.clone(), self.environment.clone())
+                            (
+                                name.lexeme.clone(),
+                                LoxObject::Function(
+                                    LoxCallable::interpreted(name.lexeme.clone(), params, body.clone(), self.environment.clone())
+                                )
                             )
                         })
-                        .map(|obj| obj.wrap())
+                        .map(|(name, obj)| (name, obj.wrap()))
                         .collect();
                 let class = LoxObject::Class(LoxClass {
                     name: name.lexeme.clone(),

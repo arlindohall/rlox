@@ -163,7 +163,13 @@ type ObjectValues = HashMap<String, ObjectRef>;
 #[derive(Debug, Clone, PartialEq)]
 pub struct LoxClass {
     pub name: String,
-    pub methods: Vec<ObjectRef>,
+    pub methods: HashMap<String, ObjectRef>,
+}
+
+impl LoxClass {
+    fn find_method(&self, name: &str) -> Option<ObjectRef> {
+        self.methods.get(name).map(|m| m.clone())
+    }
 }
 
 impl LoxObject {
@@ -207,11 +213,19 @@ impl LoxObject {
         }
     }
 
-    pub fn get(&self, name: &str) -> Option<ObjectRef> {
-        match self {
-            LoxObject::Object(_, fields) => fields.get(name).map(|val| val.clone()),
-            _ => None,
+    pub fn get(&self, expression: Expression, name: &str) -> Result<ObjectRef, LoxError> {
+        if let LoxObject::Object(class, fields) = self {
+            if fields.get(name).is_some() {
+                return Ok(fields.get(name).map(|val| val.clone()).unwrap());
+            } else if class.find_method(name).is_some() {
+                return Ok(class.find_method(name).unwrap());
+            }
         }
+        Err(crate::lox::runtime_error(
+            expression,
+            LoxErrorType::PropertyError,
+            &format!("undefined property {}", name),
+        ))
     }
 }
 

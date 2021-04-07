@@ -1,0 +1,10 @@
+class Bacon {
+    cook() {
+        print "sizzle";
+    }
+}
+
+var bacon = Bacon();
+bacon.cook();
+
+Bacon().cook();

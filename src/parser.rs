@@ -215,10 +215,10 @@ impl LoxObject {
 
     pub fn get(&self, expression: Expression, name: &str) -> Result<ObjectRef, LoxError> {
         if let LoxObject::Object(class, fields) = self {
-            if fields.get(name).is_some() {
-                return Ok(fields.get(name).map(|val| val.clone()).unwrap());
-            } else if class.find_method(name).is_some() {
-                return Ok(class.find_method(name).unwrap());
+            if let Some(field) = fields.get(name) {
+                return Ok(field.clone());
+            } else if let Some(method) = class.find_method(name) {
+                return Ok(method.clone());
             }
         }
         Err(crate::lox::runtime_error(

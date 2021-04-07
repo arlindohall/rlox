@@ -4,7 +4,7 @@ use crate::parser::{Expression, LoxClass, LoxObject, Statement};
 use crate::scanner::{Token, TokenType};
 use crate::{
     lox::{LoxError, LoxErrorType},
-    parser::ExpressionId,
+    parser::{ExpressionId, FunctionDefinition},
 };
 
 /*******************************************************************************
@@ -507,13 +507,29 @@ impl Interpreter {
                 Ok(LoxObject::Nil.wrap())
             }
             Statement::None => Ok(LoxObject::Nil.wrap()),
-            Statement::Class(name, _definition) => {
+            Statement::Class(name, definition) => {
                 self.environment
                     .borrow_mut()
                     .define(name.lexeme.clone(), LoxObject::Nil.wrap());
-                let _class = LoxObject::Class(LoxClass { name: name.lexeme });
-                todo!()
-                // self.environment.borrow_mut().assign(name.lexeme, class)
+
+                let methods: Vec<ObjectRef> = definition
+                        .iter()
+                        .map(|FunctionDefinition {name, params, body}| {
+                            let params = params.iter().map(|token| token.lexeme.clone()).collect();
+                            LoxObject::Function(
+                                LoxCallable::interpreted(name.lexeme.clone(), params, body.clone(), self.environment.clone())
+                            )
+                        })
+                        .map(|obj| obj.wrap())
+                        .collect();
+                let class = LoxObject::Class(LoxClass {
+                    name: name.lexeme.clone(),
+                    methods,
+                }).wrap();
+
+                // TODO um, the book uses `assign` here, but I deleted that and can't remember why
+                self.environment.borrow_mut().define(name.lexeme.clone(), class.clone());
+                Ok(class)
             }
         }
     }

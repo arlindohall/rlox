@@ -163,6 +163,7 @@ type ObjectValues = HashMap<String, ObjectRef>;
 #[derive(Debug, Clone, PartialEq)]
 pub struct LoxClass {
     pub name: String,
+    pub methods: Vec<ObjectRef>,
 }
 
 impl LoxObject {

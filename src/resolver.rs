@@ -182,7 +182,7 @@ impl Resolver {
                     self.resolve_expression(param)?;
                 }
             }
-            Expression::This(keyword) => {
+            Expression::This(_, keyword) => {
                 self.resolve_local(expression, keyword);
             }
             Expression::Set(object, _name, value) => {

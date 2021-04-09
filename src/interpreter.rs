@@ -74,7 +74,7 @@ impl AstPrinter for Expression {
                 let args: Vec<String> = args.iter().map(|arg| arg.to_string()).collect();
                 format!("({} {})", callee.to_string(), args.join(" "))
             }
-            Expression::This(_) => "this".to_string(),
+            Expression::This(_, _) => "this".to_string(),
             Expression::Set(object, name, value) => format!(
                 "{}.{} = {}",
                 object.to_string(),
@@ -384,7 +384,7 @@ impl Interpreter {
                     func.call(self, arguments)
                 }
             }
-            Expression::This(keyword) => {
+            Expression::This(_, keyword) => {
                 self.lookup_variable(keyword, expression)
             }
             Expression::Set(object, name, value) => {

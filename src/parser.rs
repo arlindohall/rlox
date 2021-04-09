@@ -53,7 +53,7 @@ pub enum Expression {
     Logical(Box<Expression>, Token, Box<Expression>),
     Unary(Token, Box<Expression>),
     Call(Box<Expression>, Token, Vec<Expression>),
-    This(Token),
+    This(ExpressionId, Token),
     Set(Box<Expression>, Token, Box<Expression>),
     Get(Box<Expression>, Token),
     Variable(ExpressionId, Token),
@@ -95,7 +95,7 @@ impl Expression {
     }
 
     fn this(keyword: Token) -> Expression {
-        Expression::This(keyword)
+        Expression::This(Uuid::new_v4().as_u128(), keyword)
     }
 
     fn get(object: Expression, name: Token) -> Expression {
@@ -108,7 +108,7 @@ impl Expression {
 
     pub fn get_id(&self) -> ExpressionId {
         match self {
-            Expression::Variable(id, _) | Expression::Assignment(id, _, _) => *id,
+            Expression::Variable(id, _) | Expression::Assignment(id, _, _) | Expression::This(id, _) => *id,
             _ => panic!(format!(
                 "Unrecoverable lox error to get expression id for expression {:?}",
                 self

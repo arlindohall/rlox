@@ -390,7 +390,7 @@ impl Interpreter {
             Expression::Set(object, name, value) => {
                 let object = self.interpret_expression(*object)?;
 
-                if object.borrow().get_type() == "Object" {
+                if object.borrow().is_instance() {
                     let value = self.interpret_expression(*value)?;
                     object.borrow_mut().set(name.lexeme, value.clone());
                     // TODO, and this will probably be far-reaching, object fields need to be Rc references.

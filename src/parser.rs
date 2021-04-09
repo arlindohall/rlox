@@ -153,7 +153,7 @@ pub enum LoxObject {
     String(String),
     Number(LoxNumber),
     Class(LoxClass),
-    Object(LoxClass, ObjectValues),
+    Instance(LoxClass, ObjectValues),
     Function(LoxCallable),
     Nil,
 }
@@ -181,8 +181,15 @@ impl LoxObject {
             // TODO: maybe actually print objects
             LoxObject::Function(callable) => callable.to_string(),
             LoxObject::Class(class) => class.name.clone(),
-            LoxObject::Object(class, _) => format!("<{}>", class.name),
+            LoxObject::Instance(class, _) => format!("<{}>", class.name),
             LoxObject::Nil => String::from("nil"),
+        }
+    }
+
+    pub fn is_instance(&self) -> bool {
+        match self {
+            LoxObject::Instance(_, _) => true,
+            _ => false,
         }
     }
 
@@ -193,7 +200,7 @@ impl LoxObject {
             LoxObject::Number(_) => "Number",
             LoxObject::Function(_) => "Function",
             LoxObject::Class(_) => "Class",
-            LoxObject::Object(_, _) => "Object", // TODO: maybe this should be instances to match the text
+            LoxObject::Instance(_, _) => "Instance",
             LoxObject::Nil => "Nil",
         };
 
@@ -206,7 +213,7 @@ impl LoxObject {
 
     pub fn set(&mut self, name: String, value: ObjectRef) {
         match self {
-            LoxObject::Object(_, fields) => {
+            LoxObject::Instance(_, fields) => {
                 fields.insert(name, value);
             }
             _ => panic!(format!("cannot set property on {}", self.get_type())),
@@ -214,7 +221,7 @@ impl LoxObject {
     }
 
     pub fn get(&self, expression: Expression, name: &str) -> Result<ObjectRef, LoxError> {
-        if let LoxObject::Object(class, fields) = self {
+        if let LoxObject::Instance(class, fields) = self {
             if let Some(field) = fields.get(name) {
                 return Ok(field.clone());
             } else if let Some(method) = class.find_method(name) {

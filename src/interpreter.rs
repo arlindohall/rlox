@@ -402,7 +402,7 @@ impl Interpreter {
             }
             Expression::Get(object, name) => {
                 let object = self.interpret_expression(*object)?;
-                if object.borrow().get_type() == "Object" {
+                if object.borrow().is_instance() {
                     object.borrow().get(expression, &name.lexeme)
                 } else {
                     Err(crate::lox::runtime_error(
@@ -666,7 +666,7 @@ impl LoxCallable {
         match &*object.borrow() {
             // TODO: This is a total guess but I have a feeling we're heading somewhere like this
             LoxObject::Function(f) => Ok(f.clone()),
-            LoxObject::Object(_class, values) => match values.get("__call") {
+            LoxObject::Instance(_class, values) => match values.get("__call") {
                 Some(obj) => Self::try_from(obj.clone()),
                 None => err(object.clone()),
             },
@@ -726,7 +726,7 @@ impl LoxCallable {
                 result
             }
             Executable::Native(f) => f(args),
-            Executable::Constructor(class) => Ok(LoxObject::Object(class, HashMap::new()).wrap()),
+            Executable::Constructor(class) => Ok(LoxObject::Instance(class, HashMap::new()).wrap()),
         }
     }
 }

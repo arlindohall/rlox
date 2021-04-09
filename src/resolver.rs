@@ -182,6 +182,9 @@ impl Resolver {
                     self.resolve_expression(param)?;
                 }
             }
+            Expression::This(keyword) => {
+                self.resolve_local(expression, keyword);
+            }
             Expression::Set(object, _name, value) => {
                 self.resolve_expression(value)?;
                 self.resolve_expression(object)?;
@@ -266,9 +269,14 @@ impl Resolver {
                 self.declare(name)?;
                 self.define(name);
 
+                self.begin_scope();
+                self.peek().unwrap().borrow_mut().insert("this".to_string(), true);
+
                 for method in methods {
                     self.resolve_function(method, FunctionType::Method)?;
                 }
+
+                self.end_scope();
             }
         }
         Ok(())

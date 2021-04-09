@@ -74,6 +74,7 @@ impl AstPrinter for Expression {
                 let args: Vec<String> = args.iter().map(|arg| arg.to_string()).collect();
                 format!("({} {})", callee.to_string(), args.join(" "))
             }
+            Expression::This(_) => "this".to_string(),
             Expression::Set(object, name, value) => format!(
                 "{}.{} = {}",
                 object.to_string(),
@@ -383,6 +384,9 @@ impl Interpreter {
                     func.call(self, arguments)
                 }
             }
+            Expression::This(keyword) => {
+                self.lookup_variable(keyword, expression)
+            }
             Expression::Set(object, name, value) => {
                 let object = self.interpret_expression(*object)?;
 
@@ -403,7 +407,7 @@ impl Interpreter {
             Expression::Get(object, name) => {
                 let object = self.interpret_expression(*object)?;
                 if object.borrow().is_instance() {
-                    object.borrow().get(expression, &name.lexeme)
+                    object.borrow().get(object.clone(), expression, &name.lexeme)
                 } else {
                     Err(crate::lox::runtime_error(
                         expression,
@@ -727,6 +731,28 @@ impl LoxCallable {
             }
             Executable::Native(f) => f(args),
             Executable::Constructor(class) => Ok(LoxObject::Instance(class, HashMap::new()).wrap()),
+        }
+    }
+}
+
+pub trait Bindable {
+    fn bind(&mut self, obj: ObjectRef) -> LoxCallable;
+}
+
+impl Bindable for LoxObject {
+    fn bind(&mut self, obj: ObjectRef) -> LoxCallable {
+        match self {
+            LoxObject::Function(callable) => {
+                let env = Environment::extend(callable.closure.clone());
+                env.borrow_mut().define("this".to_string(), obj);
+                LoxCallable {
+                    arity: callable.arity,
+                    closure: env,
+                    exec: callable.exec.clone(),
+                    name: callable.name.clone(),
+                }
+            },
+            _ => todo!("unimplemented binding non-function to object")
         }
     }
 }

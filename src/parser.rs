@@ -5,7 +5,7 @@ use crate::{
     lox::{FileLocation, LoxError, LoxErrorType, LoxNumber},
 };
 use crate::{
-    interpreter::ObjectRef,
+    interpreter::{ObjectRef, Bindable},
     scanner::{Token, TokenType},
 };
 use uuid::Uuid;
@@ -53,6 +53,7 @@ pub enum Expression {
     Logical(Box<Expression>, Token, Box<Expression>),
     Unary(Token, Box<Expression>),
     Call(Box<Expression>, Token, Vec<Expression>),
+    This(Token),
     Set(Box<Expression>, Token, Box<Expression>),
     Get(Box<Expression>, Token),
     Variable(ExpressionId, Token),
@@ -91,6 +92,10 @@ impl Expression {
 
     fn call(callee: Expression, paren: Token, params: Vec<Expression>) -> Expression {
         Expression::Call(Box::new(callee), paren, params)
+    }
+
+    fn this(keyword: Token) -> Expression {
+        Expression::This(keyword)
     }
 
     fn get(object: Expression, name: Token) -> Expression {
@@ -220,12 +225,12 @@ impl LoxObject {
         }
     }
 
-    pub fn get(&self, expression: Expression, name: &str) -> Result<ObjectRef, LoxError> {
+    pub fn get(&self, this: ObjectRef, expression: Expression, name: &str) -> Result<ObjectRef, LoxError> {
         if let LoxObject::Instance(class, fields) = self {
             if let Some(field) = fields.get(name) {
                 return Ok(field.clone());
             } else if let Some(method) = class.find_method(name) {
-                return Ok(method.clone());
+                return Ok(LoxObject::Function(method.clone().borrow_mut().bind(this)).wrap())
             }
         }
         Err(crate::lox::runtime_error(
@@ -714,6 +719,8 @@ impl Parser {
             Ok(Expression::literal(
                 LoxObject::String(self.previous().literal.get_string().unwrap()).wrap(),
             ))
+        } else if self.match_token(TokenType::This) {
+            Ok(Expression::this(self.previous()))
         } else if self.match_token(TokenType::Identifier) {
             Ok(Expression::variable(self.previous()))
         } else if self.match_token(TokenType::LeftParen) {

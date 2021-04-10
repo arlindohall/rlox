@@ -48,20 +48,21 @@ pub struct Resolver {
 enum FunctionType {
     Function,
     Method,
+    Initializer,
     None,
 }
 
 impl FunctionType {
-    fn is_function(&self) -> bool {
+    fn is_none(&self) -> bool {
         match self {
-            &FunctionType::Function => true,
+            &FunctionType::None => true,
             _ => false,
         }
     }
 
-    fn is_method(&self) -> bool {
+    fn is_initializer(&self) -> bool {
         match self {
-            &FunctionType::Method => true,
+            &FunctionType::Initializer => true,
             _ => false,
         }
     }
@@ -278,11 +279,18 @@ impl Resolver {
                 self.resolve_statement(&stmt)?;
             }
             Statement::Return(keyword, expr) => {
-                if !self.current_function.is_function() {
+                if self.current_function.is_initializer() && expr.is_nil() {
                     return Err(crate::lox::parse_error(
                         keyword.clone(),
                         LoxErrorType::FunctionCallError,
-                        "",
+                        "cannot return a value from an initializer"
+                    ));
+                }
+                if self.current_function.is_none() {
+                    return Err(crate::lox::parse_error(
+                        keyword.clone(),
+                        LoxErrorType::FunctionCallError,
+                        "cannot return outside a function or method",
                     ));
                 }
                 self.resolve_expression(expr)?;
@@ -298,7 +306,12 @@ impl Resolver {
                 self.peek().unwrap().borrow_mut().insert("this".to_string(), true);
 
                 for method in methods {
-                    self.resolve_function(method, FunctionType::Method)?;
+                    let function_type = if method.name.lexeme == "init" {
+                        FunctionType::Initializer
+                    } else {
+                        FunctionType::Method
+                    };
+                    self.resolve_function(method, function_type)?;
                 }
 
                 self.end_scope();

@@ -116,6 +116,14 @@ impl Expression {
         }
     }
 
+    pub fn is_nil(&self) -> bool {
+        match self {
+            Expression::Literal(obj) => obj.borrow().is_nil(),
+            _ => false
+        }
+
+    }
+
     pub fn is_truthy(obj: ObjectRef) -> bool {
         match *obj.borrow() {
             LoxObject::Nil => false,
@@ -194,6 +202,13 @@ impl LoxObject {
     pub fn is_instance(&self) -> bool {
         match self {
             LoxObject::Instance(_, _) => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_nil(&self) -> bool {
+        match self {
+            LoxObject::Nil => true,
             _ => false,
         }
     }

@@ -602,6 +602,7 @@ pub struct LoxCallable {
     arity: u8,
     closure: SharedEnvironment,
     exec: Executable,
+    is_initializer: bool,
     name: String,
 }
 
@@ -627,6 +628,10 @@ enum Executable {
 }
 
 impl LoxCallable {
+    pub fn to_string(&self) -> String {
+        format!("<fn {}(arity={})>", self.name, self.arity)
+    }
+
     pub fn native(
         name: String,
         arity: u8,
@@ -637,12 +642,9 @@ impl LoxCallable {
             arity,
             name,
             closure: global,
+            is_initializer: false,
             exec: Executable::Native(f),
         }
-    }
-
-    pub fn to_string(&self) -> String {
-        format!("<fn {}(arity={})>", self.name, self.arity)
     }
 
     pub fn interpreted(
@@ -655,6 +657,7 @@ impl LoxCallable {
             name,
             arity: params.len() as u8,
             closure,
+            is_initializer: false,
             exec: Executable::Interpreted(body, params),
         }
     }
@@ -686,8 +689,9 @@ impl LoxCallable {
                 };
                 let callable = LoxCallable {
                     arity,
-                    closure: Environment::new(),
                     exec: Executable::Constructor(class.clone()),
+                    closure: Environment::new(),
+                    is_initializer: true,
                     name: class.name.clone(),
                 };
                 Ok(callable)
@@ -728,14 +732,26 @@ impl LoxCallable {
                     result = match interpreter.interpret_statement(statement) {
                         Ok(obj) => Ok(obj),
                         Err(LoxError::ReturnPseudoError { value }) => {
-                            interpreter.environment = old;
-                            return Ok(value.clone());
+                            if self.is_initializer {
+                                let this = self.closure.borrow().values.get("this").unwrap().clone();
+                                interpreter.environment = old;
+                                return Ok(this)
+                            } else {
+                                interpreter.environment = old;
+                                return Ok(value.clone());
+                            }
                         }
                         Err(_) => {
                             interpreter.environment = old;
                             return result;
                         }
                     }
+                }
+
+                if self.is_initializer {
+                    let this = self.closure.borrow().values.get("this").unwrap().clone();
+                    interpreter.environment = old;
+                    return Ok(this)
                 }
 
                 interpreter.environment = old;
@@ -767,8 +783,9 @@ impl Bindable for LoxObject {
                 let env = Environment::extend(callable.closure.clone());
                 env.borrow_mut().define("this".to_string(), obj);
                 LoxCallable {
-                    arity: callable.arity,
                     closure: env,
+                    is_initializer: callable.is_initializer,
+                    arity: callable.arity,
                     exec: callable.exec.clone(),
                     name: callable.name.clone(),
                 }

@@ -42,6 +42,7 @@ pub struct Resolver {
     interpreter: Interpreter,
     scopes: Scopes,
     current_function: FunctionType,
+    current_class: ClassType
 }
 
 enum FunctionType {
@@ -66,12 +67,27 @@ impl FunctionType {
     }
 }
 
+enum ClassType {
+    Class,
+    None,
+}
+
+impl ClassType {
+    fn is_none(&self) -> bool {
+        match self {
+            ClassType::None => true,
+            _ => false,
+        }
+    }
+}
+
 impl Resolver {
     pub fn new(interpreter: Interpreter) -> Resolver {
         Resolver {
             interpreter,
             scopes: vec![new_scope()],
             current_function: FunctionType::None,
+            current_class: ClassType::None,
         }
     }
 
@@ -183,6 +199,13 @@ impl Resolver {
                 }
             }
             Expression::This(_, keyword) => {
+                if self.current_class.is_none() {
+                    return Err(crate::lox::parse_error(
+                        keyword.clone(),
+                        LoxErrorType::ReferenceError,
+                        "can't use 'this' outside of class"
+                    ));
+                }
                 self.resolve_local(expression, keyword);
             }
             Expression::Set(object, _name, value) => {
@@ -266,6 +289,8 @@ impl Resolver {
             }
             Statement::None => (),
             Statement::Class(name, methods) => {
+                let mut enclosing = std::mem::replace(&mut self.current_class, ClassType::Class);
+
                 self.declare(name)?;
                 self.define(name);
 
@@ -277,6 +302,8 @@ impl Resolver {
                 }
 
                 self.end_scope();
+
+                std::mem::swap(&mut enclosing, &mut self.current_class);
             }
         }
         Ok(())

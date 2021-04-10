@@ -121,6 +121,7 @@ pub enum LoxErrorType {
     IncompleteExpression,
     DefinitionError,
     InitializationError,
+    ReferenceError,
 
     // Runtime errors
     TypeError,

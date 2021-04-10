@@ -38,9 +38,20 @@ jane.name = "Jane";
 phil.name = "Phil";
 
 jane.greet();
-phil.greet();
 
 jane.greet = phil.greet;
-
 jane.greet();
-phil.greet();
+
+class Dog {
+    init(name) {
+        this.name = name;
+        this.breed = "Mutt";
+    }
+
+    greet() {
+        print "Hi, I'm " + this.name + ", and I'm a " + this.breed + ".";
+    }
+}
+
+var rover = Dog("Rover");
+rover.greet();

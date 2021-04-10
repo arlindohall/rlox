@@ -674,12 +674,24 @@ impl LoxCallable {
                 Some(obj) => Self::try_from(obj.clone()),
                 None => err(object.clone()),
             },
-            LoxObject::Class(class) => Ok(LoxCallable {
-                arity: 0,
-                closure: Environment::new(),
-                exec: Executable::Constructor(class.clone()),
-                name: class.name.clone(),
-            }),
+            LoxObject::Class(class) => {
+                let arity = if let Some(init) = class.find_method("init") {
+                    if let LoxObject::Function(c) = &*init.borrow() {
+                        c.arity
+                    } else {
+                        0
+                    }
+                } else {
+                    0
+                };
+                let callable = LoxCallable {
+                    arity,
+                    closure: Environment::new(),
+                    exec: Executable::Constructor(class.clone()),
+                    name: class.name.clone(),
+                };
+                Ok(callable)
+            },
             _ => err(object.clone()),
         }
     }
@@ -730,7 +742,16 @@ impl LoxCallable {
                 result
             }
             Executable::Native(f) => f(args),
-            Executable::Constructor(class) => Ok(LoxObject::Instance(class, HashMap::new()).wrap()),
+            Executable::Constructor(class) => {
+                let initializer = class.find_method("init");
+                let instance = LoxObject::Instance(class, HashMap::new()).wrap();
+
+                if let Some(init) = initializer {
+                    init.borrow_mut().bind(instance.clone()).call(interpreter, args)?;
+                }
+
+                Ok(instance)
+            },
         }
     }
 }

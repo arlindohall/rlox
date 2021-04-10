@@ -172,7 +172,7 @@ pub struct LoxClass {
 }
 
 impl LoxClass {
-    fn find_method(&self, name: &str) -> Option<ObjectRef> {
+    pub fn find_method(&self, name: &str) -> Option<ObjectRef> {
         self.methods.get(name).map(|m| m.clone())
     }
 }

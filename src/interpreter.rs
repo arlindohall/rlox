@@ -260,7 +260,19 @@ impl AstPrinter for Statement {
 
 impl LoxClass {
     pub fn find_method(&self, name: &str) -> Option<FunctionRef> {
-        self.methods.get(name).map(|m| m.clone())
+        let super_method = self.superclass
+            .clone()
+            .map(|sc| if let Object { value: ObjectType::Primitive(PrimitiveObject::Class(class))} = &*sc.borrow() {
+                Some(class.find_method(name).clone())
+            } else {
+                None
+            })
+            .flatten()
+            .flatten();
+        self.methods
+            .get(name)
+            .map(|m| m.clone())
+            .or(super_method)
     }
 
     pub fn new(name: String, methods: HashMap<String, FunctionRef>) -> LoxClass {

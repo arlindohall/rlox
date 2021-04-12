@@ -1,6 +1,6 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
-use crate::scanner::{Token, TokenType};
+use crate::{builtins, scanner::{Token, TokenType}};
 use crate::{
     lox::LoxNumber,
     parser::{Expression, LoxLiteral, Statement},
@@ -40,13 +40,14 @@ pub struct Interpreter {
 }
 
 type Locals = HashMap<ExpressionId, u16>;
-type SharedEnvironment = Rc<RefCell<Environment>>;
+pub type SharedEnvironment = Rc<RefCell<Environment>>;
 pub type ObjectRef = Rc<RefCell<Object>>;
 pub type FunctionRef = Rc<RefCell<LoxFunction>>;
 
+// TODO maybe don't have values exposed, just have a getter, no setter??
 #[derive(Debug, Clone, PartialEq)]
 pub struct Environment {
-    values: HashMap<String, ObjectRef>,
+    pub values: HashMap<String, ObjectRef>,
     enclosing: Option<SharedEnvironment>,
 }
 
@@ -56,8 +57,9 @@ pub struct Object {
     value: ObjectType,
 }
 
+// Maybe revisit this, but it's only public so builtins can implement it
 #[derive(Debug, Clone, PartialEq)]
-struct LoxClass {
+pub struct LoxClass {
     name: String,
     methods: HashMap<String, FunctionRef>,
 }
@@ -97,7 +99,7 @@ pub struct LoxFunction {
 enum Executable {
     Constructor(LoxClass),
     Interpreted(Vec<Statement>, Vec<String>),
-    Native(fn(Vec<ObjectRef>, Expression) -> Result<ObjectRef, LoxError>),
+    Native(fn(Vec<ObjectRef>, SharedEnvironment, Expression) -> Result<ObjectRef, LoxError>),
 }
 
 pub trait AstPrinter {
@@ -253,6 +255,26 @@ impl LoxClass {
     pub fn find_method(&self, name: &str) -> Option<FunctionRef> {
         self.methods.get(name).map(|m| m.clone())
     }
+
+    pub fn new(name: String, methods: HashMap<String, FunctionRef>) -> LoxClass {
+        LoxClass {
+            name,
+            methods
+        }
+    }
+}
+
+impl PrimitiveObject {
+    fn get_class(&self, environment_with_this: SharedEnvironment) -> LoxClass {
+        match self {
+            PrimitiveObject::Boolean(_) => builtins::boolean(environment_with_this),
+            PrimitiveObject::Number(_) => builtins::number(environment_with_this),
+            PrimitiveObject::String(_) => builtins::string(environment_with_this),
+            PrimitiveObject::Function(_) => builtins::function(environment_with_this),
+            PrimitiveObject::Class(_) => builtins::meta_class(environment_with_this),
+            PrimitiveObject::Nil => builtins::nil(environment_with_this),
+        }
+    }
 }
 
 impl std::convert::From<LoxLiteral> for PrimitiveObject {
@@ -342,7 +364,7 @@ impl ObjectType {
         }
     }
 
-    pub fn _is_nil(&self) -> bool {
+    pub fn is_nil(&self) -> bool {
         match self {
             Self::Primitive(PrimitiveObject::Nil) => true,
             _ => false,
@@ -372,26 +394,20 @@ impl ObjectType {
         }
     }
 
-    pub fn get_type(&self) -> String {
-        let s = match self {
-            Self::Primitive(PrimitiveObject::Boolean(_)) => "Boolean",
-            Self::Primitive(PrimitiveObject::String(_)) => "String",
-            Self::Primitive(PrimitiveObject::Number(_)) => "Number",
-            Self::Primitive(PrimitiveObject::Function(_)) => "Function",
-            Self::Primitive(PrimitiveObject::Class(_)) => "Class",
-            Self::Primitive(PrimitiveObject::Nil) => "Nil",
-            Self::Instance(Instance { class, .. }) => &class.name,
-        };
-
-        String::from(s)
+    pub fn get_type(&self, this: ObjectRef) -> String {
+        let singleton = Environment::singleton(this);
+        match self {
+            Self::Primitive(primitive) => primitive.get_class(singleton).name,
+            Self::Instance(Instance { class, .. }) => class.name.to_string(),
+        }
     }
 
-    pub fn set(&mut self, name: String, value: ObjectRef) {
+    pub fn set(&mut self, this: ObjectRef, name: String, value: ObjectRef) {
         match self {
             Self::Instance(Instance { fields, .. }) => {
                 fields.insert(name, value);
             }
-            _ => panic!(format!("cannot set property on {}", self.get_type())),
+            _ => panic!(format!("cannot set property on {}", self.get_type(this))),
         }
     }
 
@@ -405,6 +421,11 @@ impl ObjectType {
             if let Some(field) = fields.get(name) {
                 return Ok(field.clone());
             } else if let Some(method) = class.find_method(name) {
+                return Ok(Object::function(method.clone().borrow_mut().bind(this)));
+            }
+        } else if let Self::Primitive(primitive) = self {
+            let class = primitive.get_class(Environment::singleton(this.clone()));
+            if let Some(method) = class.find_method(name) {
                 return Ok(Object::function(method.clone().borrow_mut().bind(this)));
             }
         }
@@ -513,7 +534,7 @@ impl Interpreter {
                                 &format!(
                                     "cannot negate `{}` — expected Number, found {}",
                                     obj.borrow().value.to_string(),
-                                    obj.borrow().value.get_type()
+                                    obj.borrow().value.get_type(obj.clone())
                                 ),
                             ))
                         }
@@ -677,7 +698,7 @@ impl Interpreter {
 
                 if object.borrow().value.is_instance() {
                     let value = self.interpret_expression(*value)?;
-                    object.borrow_mut().value.set(name.lexeme, value.clone());
+                    object.clone().borrow_mut().value.set(object.clone(), name.lexeme, value.clone());
                     // TODO, and this will probably be far-reaching, object fields need to be Rc references.
                     // this will appear as a bug where object state changes aren't persisted
                     Ok(value)
@@ -696,12 +717,16 @@ impl Interpreter {
                         .borrow()
                         .value
                         .get(object.clone(), expression, &name.lexeme)
-                } else {
+                } else if object.borrow().value.is_nil() {
                     Err(crate::lox::runtime_error(
                         expression,
-                        LoxErrorType::PropertyError,
-                        "only instances have properties",
+                        LoxErrorType::TypeError,
+                        &format!("cannot access property {} on value nil, nil has no properties", name.lexeme)
                     ))
+                } else {
+                    // Method retrieval on builtin classes is just property lookup
+                    // Adding properties to builtins later would happen here
+                    object.borrow().value.get(object.clone(), expression, &name.lexeme)
                 }
             }
         }
@@ -893,6 +918,15 @@ impl Environment {
         }))
     }
 
+    fn singleton(object: ObjectRef) -> SharedEnvironment {
+        let mut values = HashMap::new();
+        values.insert("this".to_string(), object);
+        Rc::new(RefCell::new(Environment {
+            values,
+            enclosing: None,
+        }))
+    }
+
     pub fn define(&mut self, name: String, value: ObjectRef) {
         crate::lox::trace(format!(
             ">>> Inserted into environment name={} val={}",
@@ -954,7 +988,7 @@ impl LoxFunction {
         name: String,
         arity: u8,
         global: SharedEnvironment,
-        f: fn(Vec<ObjectRef>, Expression) -> Result<ObjectRef, LoxError>,
+        f: fn(Vec<ObjectRef>, SharedEnvironment, Expression) -> Result<ObjectRef, LoxError>,
     ) -> FunctionRef {
         LoxFunction {
             arity,
@@ -1083,7 +1117,7 @@ impl LoxFunction {
                 interpreter.environment = old;
                 result
             }
-            Executable::Native(f) => f(args, expression),
+            Executable::Native(f) => f(args, self.closure.clone(), expression),
             Executable::Constructor(class) => {
                 let initializer = class.find_method("init");
                 let instance = Object::instance(Instance {

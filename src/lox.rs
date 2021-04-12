@@ -1,4 +1,4 @@
-use crate::scanner::{Scanner, Token, TokenType};
+use crate::{interpreter::SharedEnvironment, scanner::{Scanner, Token, TokenType}};
 use crate::{
     builtins::clock,
     interpreter::ObjectRef,
@@ -206,25 +206,29 @@ pub fn reserved(name: &str) -> Option<TokenType> {
     None
 }
 
-pub struct Lox {}
+pub struct Lox {
+    environment: SharedEnvironment
+}
 
 impl Lox {
-    pub fn run(&self, snippet: String) -> Result<(), LoxError> {
+    pub fn new() -> Lox {
+        let environment = Environment::new();
+        Lox { environment }
+    }
+
+    pub fn run(&mut self, snippet: String) -> Result<(), LoxError> {
         let mut scanner = Scanner::new(snippet);
         let tokens = scanner.scan_tokens()?;
         let mut parser = Parser::new(tokens);
         let statements = parser.parse()?;
 
-        // TODO: maybe this should be structured so Lox doesn't need
-        // to know what an environment is?
-        let environment = Environment::new();
-        let clock = clock(environment.clone());
-        environment
+        let clock = clock(self.environment.clone());
+        self.environment
             .clone()
             .borrow_mut()
             .define("clock".to_owned(), clock);
 
-        let interpreter = Interpreter::with_env(environment.clone());
+        let interpreter = Interpreter::with_env(self.environment.clone());
         let mut resolver = Resolver::new(interpreter);
 
         let mut errors = Vec::new();

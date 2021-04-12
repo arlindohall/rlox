@@ -6,7 +6,7 @@ use rlox::lox::Lox;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<String> = std::env::args().collect();
-    let lox = Lox {};
+    let mut lox = Lox::new();
 
     /*
     The book has two methods, run_file and run_prompt, that handle two
@@ -41,7 +41,6 @@ fn main() -> Result<(), Box<dyn Error>> {
         let lock = stdin.lock();
 
         for line in lock.lines() {
-            // TODO: Better error handling here, probably addressed in book
             match lox.run(line?) {
                 Ok(_) => (),
                 Err(e) => println!("Error: {}", e.to_string()),

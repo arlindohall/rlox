@@ -301,6 +301,20 @@ impl Resolver {
                 self.declare(name)?;
                 self.define(name);
 
+                if let Some(Expression::Variable { name: super_name, .. }) = superclass {
+                    if name.lexeme == super_name.lexeme {
+                        return Err(crate::lox::parse_error(
+                            super_name.clone(),
+                            LoxErrorType::ClassError,
+                            "class cannot inherit from itself"))
+                    }
+                } else if let Some(_expression) = superclass {
+                    return Err(crate::lox::parse_error(
+                        name.clone(),
+                        LoxErrorType::ClassError,
+                        &format!("cannot inherit from non-class")))
+                }
+
                 if let Some(superclass) = superclass {
                     self.resolve_expression(superclass)?;
                 }

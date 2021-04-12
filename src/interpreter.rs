@@ -270,14 +270,14 @@ impl LoxClass {
 }
 
 impl PrimitiveObject {
-    fn get_class(&self, environment_with_this: SharedEnvironment) -> LoxClass {
+    fn get_class(&self) -> LoxClass {
         match self {
-            PrimitiveObject::Boolean(_) => builtins::boolean(environment_with_this),
-            PrimitiveObject::Number(_) => builtins::number(environment_with_this),
-            PrimitiveObject::String(_) => builtins::string(environment_with_this),
-            PrimitiveObject::Function(_) => builtins::function(environment_with_this),
-            PrimitiveObject::Class(_) => builtins::meta_class(environment_with_this),
-            PrimitiveObject::Nil => builtins::nil(environment_with_this),
+            PrimitiveObject::Boolean(_) => builtins::boolean(),
+            PrimitiveObject::Number(_) => builtins::number(),
+            PrimitiveObject::String(_) => builtins::string(),
+            PrimitiveObject::Function(_) => builtins::function(),
+            PrimitiveObject::Class(_) => builtins::meta_class(),
+            PrimitiveObject::Nil => builtins::nil(),
         }
     }
 }
@@ -399,20 +399,19 @@ impl ObjectType {
         }
     }
 
-    pub fn get_type(&self, this: ObjectRef) -> String {
-        let singleton = Environment::singleton(this);
+    pub fn get_type(&self) -> String {
         match self {
-            Self::Primitive(primitive) => primitive.get_class(singleton).name,
+            Self::Primitive(primitive) => primitive.get_class().name,
             Self::Instance(Instance { class, .. }) => class.name.to_string(),
         }
     }
 
-    pub fn set(&mut self, this: ObjectRef, name: String, value: ObjectRef) {
+    pub fn set(&mut self, name: String, value: ObjectRef) {
         match self {
             Self::Instance(Instance { fields, .. }) => {
                 fields.insert(name, value);
             }
-            _ => panic!(format!("cannot set property on {}", self.get_type(this))),
+            _ => panic!(format!("cannot set property on {}", self.get_type())),
         }
     }
 
@@ -429,7 +428,7 @@ impl ObjectType {
                 return Ok(Object::function(method.clone().borrow_mut().bind(this)));
             }
         } else if let Self::Primitive(primitive) = self {
-            let class = primitive.get_class(Environment::singleton(this.clone()));
+            let class = primitive.get_class();
             if let Some(method) = class.find_method(name) {
                 return Ok(Object::function(method.clone().borrow_mut().bind(this)));
             }
@@ -539,7 +538,7 @@ impl Interpreter {
                                 &format!(
                                     "cannot negate `{}` — expected Number, found {}",
                                     obj.borrow().value.to_string(),
-                                    obj.borrow().value.get_type(obj.clone())
+                                    obj.borrow().value.get_type()
                                 ),
                             ))
                         }
@@ -704,7 +703,6 @@ impl Interpreter {
                 if object.borrow().value.is_instance() {
                     let value = self.interpret_expression(*value)?;
                     object.clone().borrow_mut().value.set(
-                        object.clone(),
                         name.lexeme,
                         value.clone(),
                     );
@@ -930,15 +928,6 @@ impl Environment {
         Rc::new(RefCell::new(Environment {
             values: HashMap::new(),
             enclosing: Some(environment),
-        }))
-    }
-
-    fn singleton(object: ObjectRef) -> SharedEnvironment {
-        let mut values = HashMap::new();
-        values.insert("this".to_string(), object);
-        Rc::new(RefCell::new(Environment {
-            values,
-            enclosing: None,
         }))
     }
 

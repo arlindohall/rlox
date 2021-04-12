@@ -134,7 +134,7 @@ pub struct FunctionDefinition {
 pub struct ClassDefinition {
     pub name: Token,
     pub methods: Vec<FunctionDefinition>,
-    pub superclass: Option<Token>,
+    pub superclass: Option<Expression>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -213,7 +213,8 @@ impl Parser {
         let name = self.consume(TokenType::Identifier, "expect class name")?;
 
         let superclass = if self.match_token(TokenType::Less) {
-            Some(self.consume(TokenType::Identifier, "expect superclass name after '>'")?)
+            let token = self.consume(TokenType::Identifier, "expect superclass name after '>'")?;
+            Some(Expression::variable(token))
         } else {
             None
         };

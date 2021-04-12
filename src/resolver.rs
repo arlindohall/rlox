@@ -295,11 +295,15 @@ impl Resolver {
                 self.resolve_expression(value)?;
             }
             Statement::None => (),
-            Statement::Class { definition: ClassDefinition { name, methods, .. }} => {
+            Statement::Class { definition: ClassDefinition { name, methods, superclass }} => {
                 let mut enclosing = std::mem::replace(&mut self.current_class, ClassType::Class);
 
                 self.declare(name)?;
                 self.define(name);
+
+                if let Some(superclass) = superclass {
+                    self.resolve_expression(superclass)?;
+                }
 
                 self.begin_scope();
                 self.peek()

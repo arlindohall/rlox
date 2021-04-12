@@ -793,4 +793,13 @@ impl LoxLiteral {
             false
         }
     }
+
+    pub fn to_string(&self) -> String {
+        match self {
+            LoxLiteral::Boolean(b) => b.to_string(),
+            LoxLiteral::String(s) => format!("\"{}\"", s),
+            LoxLiteral::Number(n) => n.to_string(),
+            LoxLiteral::Nil => "nil".to_string(),
+        }
+    }
 }

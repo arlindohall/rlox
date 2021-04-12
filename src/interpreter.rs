@@ -1,6 +1,9 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
-use crate::{builtins, scanner::{Token, TokenType}};
+use crate::{
+    builtins,
+    scanner::{Token, TokenType},
+};
 use crate::{
     lox::LoxNumber,
     parser::{Expression, LoxLiteral, Statement},
@@ -128,7 +131,7 @@ impl AstPrinter for Expression {
                 format!("{} {} {}", left.to_string(), op.lexeme, right.to_string())
             }
             Expression::Grouping { expression } => format!("({})", expression.to_string()),
-            Expression::Literal { value } => format!("{:?}", value),
+            Expression::Literal { value } => value.to_string(),
             Expression::Unary { op, value } => format!("{}{}", op.lexeme, value.to_string()),
             Expression::Call { callee, args, .. } => {
                 let args: Vec<String> = args.iter().map(|arg| arg.to_string()).collect();
@@ -164,23 +167,23 @@ impl AstPrinter for Statement {
                     .map(|s| s.to_string_indent(indent + 1))
                     .collect();
                 format!(
-                    "{}{{\n{}{}\n}}\n",
+                    "{}{{\n{}\n{}}}",
                     prefix_whitespace,
                     printed.join("\n"),
                     prefix_whitespace
                 )
             }
             Statement::Print { expression } => {
-                format!("{}print {};\n", prefix_whitespace, expression.to_string())
+                format!("{}print {};", prefix_whitespace, expression.to_string())
             }
             Statement::Expression { expression } => {
-                format!("{}{};\n", prefix_whitespace, expression.to_string())
+                format!("{}{};", prefix_whitespace, expression.to_string())
             }
             Statement::Var {
                 name,
                 initializer: Some(value),
             } => format!(
-                "{}var {} = {};\n",
+                "{}var {} = {};",
                 prefix_whitespace,
                 name.lexeme,
                 value.to_string()
@@ -188,7 +191,7 @@ impl AstPrinter for Statement {
             Statement::Var {
                 name,
                 initializer: None,
-            } => format!("{}var {};\n", prefix_whitespace, name.lexeme),
+            } => format!("{}var {};", prefix_whitespace, name.lexeme),
             Statement::If {
                 condition,
                 then_statement,
@@ -218,7 +221,8 @@ impl AstPrinter for Statement {
             ),
             Statement::Return { value, .. } => format!("return {};\n", value.to_string()),
             Statement::Function { definition } => format!(
-                "{}fun {}({}) \n{}",
+                // "{}fun {}({}) \n{}",
+                "{}fun {}({}) {{\n{}\n{}}}",
                 prefix_whitespace,
                 definition.name.lexeme,
                 definition
@@ -227,10 +231,14 @@ impl AstPrinter for Statement {
                     .map(|p| p.lexeme.to_owned())
                     .collect::<Vec<String>>()
                     .join(", "),
-                Statement::Block {
-                    statements: definition.body.clone()
-                }
-                .to_string_indent(indent + 1)
+                definition
+                    .body
+                    .clone()
+                    .iter()
+                    .map(|statement| statement.to_string_indent(indent + 1))
+                    .collect::<Vec<String>>()
+                    .join("\n"),
+                prefix_whitespace,
             ),
             Statement::None => "\n".to_owned(),
             Statement::Class { name, methods } => format!(
@@ -244,7 +252,7 @@ impl AstPrinter for Statement {
                     }
                     .to_string_indent(indent + 1))
                     .collect::<Vec<String>>()
-                    .join(" "),
+                    .join("\n"),
                 prefix_whitespace,
             ),
         }
@@ -257,10 +265,7 @@ impl LoxClass {
     }
 
     pub fn new(name: String, methods: HashMap<String, FunctionRef>) -> LoxClass {
-        LoxClass {
-            name,
-            methods
-        }
+        LoxClass { name, methods }
     }
 }
 
@@ -698,7 +703,11 @@ impl Interpreter {
 
                 if object.borrow().value.is_instance() {
                     let value = self.interpret_expression(*value)?;
-                    object.clone().borrow_mut().value.set(object.clone(), name.lexeme, value.clone());
+                    object.clone().borrow_mut().value.set(
+                        object.clone(),
+                        name.lexeme,
+                        value.clone(),
+                    );
                     // TODO, and this will probably be far-reaching, object fields need to be Rc references.
                     // this will appear as a bug where object state changes aren't persisted
                     Ok(value)
@@ -721,12 +730,18 @@ impl Interpreter {
                     Err(crate::lox::runtime_error(
                         expression,
                         LoxErrorType::TypeError,
-                        &format!("cannot access property {} on value nil, nil has no properties", name.lexeme)
+                        &format!(
+                            "cannot access property {} on value nil, nil has no properties",
+                            name.lexeme
+                        ),
                     ))
                 } else {
                     // Method retrieval on builtin classes is just property lookup
                     // Adding properties to builtins later would happen here
-                    object.borrow().value.get(object.clone(), expression, &name.lexeme)
+                    object
+                        .borrow()
+                        .value
+                        .get(object.clone(), expression, &name.lexeme)
                 }
             }
         }

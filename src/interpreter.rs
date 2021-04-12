@@ -533,11 +533,11 @@ impl Interpreter {
                 }
             }
             Expression::Binary { left, op, right } => {
-                let robj = self.interpret_expression(*right)?;
-                let lobj = self.interpret_expression(*left)?;
+                let right = self.interpret_expression(*right)?;
+                let left = self.interpret_expression(*left)?;
 
                 match op.token_type {
-                    TokenType::Minus => match (&lobj.borrow().value, &robj.borrow().value) {
+                    TokenType::Minus => match (&left.borrow().value, &right.borrow().value) {
                         (
                             ObjectType::Primitive(PrimitiveObject::Number(l)),
                             ObjectType::Primitive(PrimitiveObject::Number(r)),
@@ -548,7 +548,7 @@ impl Interpreter {
                             "cannot subtract non-numbers",
                         )),
                     },
-                    TokenType::Slash => match (&lobj.borrow().value, &robj.borrow().value) {
+                    TokenType::Slash => match (&left.borrow().value, &right.borrow().value) {
                         (
                             ObjectType::Primitive(PrimitiveObject::Number(l)),
                             ObjectType::Primitive(PrimitiveObject::Number(r)),
@@ -569,7 +569,7 @@ impl Interpreter {
                             "cannot divide non-numbers",
                         )),
                     },
-                    TokenType::Star => match (&lobj.borrow().value, &robj.borrow().value) {
+                    TokenType::Star => match (&left.borrow().value, &right.borrow().value) {
                         (
                             ObjectType::Primitive(PrimitiveObject::Number(l)),
                             ObjectType::Primitive(PrimitiveObject::Number(r)),
@@ -580,7 +580,7 @@ impl Interpreter {
                             "cannot multiply non-numbers",
                         )),
                     },
-                    TokenType::Plus => match (&lobj.borrow().value, &robj.borrow().value) {
+                    TokenType::Plus => match (&left.borrow().value, &right.borrow().value) {
                         (
                             ObjectType::Primitive(PrimitiveObject::Number(l)),
                             ObjectType::Primitive(PrimitiveObject::Number(r)),
@@ -600,12 +600,12 @@ impl Interpreter {
                     | TokenType::Less
                     | TokenType::LessEqual => Ok(self.apply_compare(
                         op.token_type,
-                        &*lobj.borrow(),
-                        &*robj.borrow(),
+                        &*left.borrow(),
+                        &*right.borrow(),
                         expression,
                     )?),
-                    TokenType::EqualEqual => Ok(Object::boolean(lobj == robj)),
-                    TokenType::BangEqual => Ok(Object::boolean(lobj != robj)),
+                    TokenType::EqualEqual => Ok(Object::boolean(left == right)),
+                    TokenType::BangEqual => Ok(Object::boolean(left != right)),
                     _ => panic!("unimplemented binary operator"),
                 }
             }

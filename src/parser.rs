@@ -15,10 +15,10 @@ statement data structures which can be directly interpreted.
 
 /*
 This section of the code corresponds to the section of the book that uses
-metaprogramming and the visitor pattern to easily create Java classes to
+meta-programming and the visitor pattern to easily create Java classes to
 represent nested expressions. The thing is, in my opinion, Rust is usable
 enough for this kind of task that I feel fine creating this code by hand. I
-might revisit this using metaprogramming or macros later when I feel better
+might revisit this using meta-programming or macros later when I feel better
 about Rust 🙂
 
 The ultimate goal here is to show how you can implement N behaviors for each
@@ -183,7 +183,7 @@ impl Parser {
     }
 
     fn declaration(&mut self) -> Result<Statement, LoxError> {
-        let declr = if self.match_token(TokenType::Class) {
+        let declaration = if self.match_token(TokenType::Class) {
             self.class_declaration()
         } else if self.match_token(TokenType::Fun) {
             self.function("function")
@@ -193,7 +193,7 @@ impl Parser {
             self.statement()
         };
 
-        match declr {
+        match declaration {
             Ok(s) => Ok(s),
             Err(e) => {
                 self.synchronize();
@@ -319,9 +319,9 @@ impl Parser {
         let condition = if self.match_token(TokenType::Semicolon) {
             None
         } else {
-            let cond = self.expression()?;
+            let condition = self.expression()?;
             self.consume(TokenType::Semicolon, "expect ';' after for condition")?;
-            Some(cond)
+            Some(condition)
         };
 
         let increment = if self.match_token(TokenType::RightParen) {
@@ -589,7 +589,7 @@ impl Parser {
 
         let paren = self.consume(
             TokenType::RightParen,
-            "expect ')' after funnction arguments",
+            "expect ')' after function arguments",
         )?;
 
         Ok(Expression::call(expr, paren, arguments))

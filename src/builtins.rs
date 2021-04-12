@@ -11,7 +11,7 @@ use crate::{
 };
 
 /*
- * Built-in clock function. We deviate from lox and show miliseconds.
+ * Built-in clock function. We deviate from lox and show milliseconds.
  */
 fn clock_impl(_args: Vec<ObjectRef>, expression: Expression) -> Result<ObjectRef, LoxError> {
     match SystemTime::now().duration_since(UNIX_EPOCH) {

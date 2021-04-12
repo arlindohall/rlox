@@ -42,13 +42,18 @@ pub struct Resolver {
     interpreter: Interpreter,
     scopes: Scopes,
     current_function: FunctionType,
-    current_class: ClassType
+    current_class: ClassType,
 }
 
 enum FunctionType {
     Function,
     Method,
     Initializer,
+    None,
+}
+
+enum ClassType {
+    Class,
     None,
 }
 
@@ -66,11 +71,6 @@ impl FunctionType {
             _ => false,
         }
     }
-}
-
-enum ClassType {
-    Class,
-    None,
 }
 
 impl ClassType {
@@ -174,49 +174,49 @@ impl Resolver {
 
     fn resolve_expression(&mut self, expression: &Expression) -> Result<(), LoxError> {
         match expression {
-            Expression::Assignment(_, name, value) => {
+            Expression::Assignment { name, value, .. } => {
                 self.resolve_expression(&value)?;
                 self.resolve_local(expression, &name)
             }
-            Expression::Binary(left, _op, right) => {
+            Expression::Binary { left, right, .. } => {
                 self.resolve_expression(left)?;
                 self.resolve_expression(&right)?;
             }
-            Expression::Grouping(expr) => {
-                self.resolve_expression(&expr)?;
+            Expression::Grouping { expression } => {
+                self.resolve_expression(&expression)?;
             }
-            Expression::Literal(_) => (),
-            Expression::Logical(left, _op, right) => {
+            Expression::Literal { .. } => (),
+            Expression::Logical { left, right, .. } => {
                 self.resolve_expression(&left)?;
                 self.resolve_expression(&right)?;
             }
-            Expression::Unary(_op, target) => {
-                self.resolve_expression(&target)?;
+            Expression::Unary { value, .. } => {
+                self.resolve_expression(&value)?;
             }
-            Expression::Call(callee, _paren, params) => {
+            Expression::Call { callee, args, .. } => {
                 self.resolve_expression(&callee)?;
-                for param in params {
-                    self.resolve_expression(param)?;
+                for arg in args {
+                    self.resolve_expression(arg)?;
                 }
             }
-            Expression::This(_, keyword) => {
+            Expression::This { keyword, .. } => {
                 if self.current_class.is_none() {
                     return Err(crate::lox::parse_error(
                         keyword.clone(),
                         LoxErrorType::ReferenceError,
-                        "can't use 'this' outside of class"
+                        "can't use 'this' outside of class",
                     ));
                 }
                 self.resolve_local(expression, keyword);
             }
-            Expression::Set(object, _name, value) => {
+            Expression::Set { object, value, .. } => {
                 self.resolve_expression(value)?;
                 self.resolve_expression(object)?;
             }
-            Expression::Get(object, _name) => {
+            Expression::Get { object, .. } => {
                 self.resolve_expression(object)?;
             }
-            Expression::Variable(_, name) => {
+            Expression::Variable { name, .. } => {
                 if let Some(scope) = self.peek() {
                     if scope.borrow().contains_key(&name.lexeme)
                         && !scope.borrow().get(&name.lexeme).unwrap()
@@ -236,13 +236,13 @@ impl Resolver {
 
     pub fn resolve_statement(&mut self, statement: &Statement) -> Result<(), LoxError> {
         match statement {
-            Statement::Print(expr) => {
-                self.resolve_expression(expr)?;
+            Statement::Print { expression } => {
+                self.resolve_expression(expression)?;
             }
-            Statement::Expression(expr) => {
-                self.resolve_expression(expr)?;
+            Statement::Expression { expression } => {
+                self.resolve_expression(expression)?;
             }
-            Statement::Block(statements) => {
+            Statement::Block { statements, .. } => {
                 crate::lox::trace(format!(
                     ">>> Resolving block statement stmt={:?}",
                     statement
@@ -251,39 +251,43 @@ impl Resolver {
                 self.resolve_statements(&statements)?;
                 self.end_scope();
             }
-            Statement::Var(name, value) => {
+            Statement::Var { name, initializer } => {
                 self.declare(&name)?;
-                if let Some(val) = value {
+                if let Some(val) = initializer {
                     self.resolve_expression(val)?;
                 }
                 self.define(&name);
             }
-            Statement::If(cond, if_stmt, else_stmt) => {
-                self.resolve_expression(cond)?;
-                self.resolve_statement(&if_stmt)?;
-                if let Some(stmt) = else_stmt {
+            Statement::If {
+                condition,
+                then_statement,
+                else_statement,
+            } => {
+                self.resolve_expression(condition)?;
+                self.resolve_statement(&then_statement)?;
+                if let Some(stmt) = else_statement {
                     self.resolve_statement(&stmt)?;
                 }
             }
-            Statement::Function(definition) => {
+            Statement::Function { definition } => {
                 self.declare(&definition.name)?;
                 self.define(&definition.name);
                 self.resolve_function(&definition, FunctionType::Function)?;
             }
-            Statement::While(cond, stmt) => {
+            Statement::While { condition, body } => {
                 crate::lox::trace(format!(
                     ">>> Resolving while statement stmt={:?}",
                     statement
                 ));
-                self.resolve_expression(cond)?;
-                self.resolve_statement(&stmt)?;
+                self.resolve_expression(condition)?;
+                self.resolve_statement(&body)?;
             }
-            Statement::Return(keyword, expr) => {
-                if self.current_function.is_initializer() && expr.is_nil() {
+            Statement::Return { keyword, value } => {
+                if self.current_function.is_initializer() && value.is_nil() {
                     return Err(crate::lox::parse_error(
                         keyword.clone(),
                         LoxErrorType::FunctionCallError,
-                        "cannot return a value from an initializer"
+                        "cannot return a value from an initializer",
                     ));
                 }
                 if self.current_function.is_none() {
@@ -293,17 +297,20 @@ impl Resolver {
                         "cannot return outside a function or method",
                     ));
                 }
-                self.resolve_expression(expr)?;
+                self.resolve_expression(value)?;
             }
             Statement::None => (),
-            Statement::Class(name, methods) => {
+            Statement::Class { name, methods } => {
                 let mut enclosing = std::mem::replace(&mut self.current_class, ClassType::Class);
 
                 self.declare(name)?;
                 self.define(name);
 
                 self.begin_scope();
-                self.peek().unwrap().borrow_mut().insert("this".to_string(), true);
+                self.peek()
+                    .unwrap()
+                    .borrow_mut()
+                    .insert("this".to_string(), true);
 
                 for method in methods {
                     let function_type = if method.name.lexeme == "init" {

@@ -5,27 +5,27 @@ use std::{
 };
 
 use crate::{
-    interpreter::{Environment, LoxCallable, ObjectRef},
+    interpreter::{Environment, LoxFunction, Object, ObjectRef},
     lox::{LoxError, LoxErrorType},
-    parser::{Expression, LoxObject},
+    parser::Expression,
 };
 
 /*
  * Built-in clock function. We deviate from lox and show miliseconds.
  */
-fn clock_impl(_args: Vec<ObjectRef>) -> Result<ObjectRef, LoxError> {
+fn clock_impl(_args: Vec<ObjectRef>, expression: Expression) -> Result<ObjectRef, LoxError> {
     match SystemTime::now().duration_since(UNIX_EPOCH) {
-        Ok(time) => Ok(LoxObject::Number(time.as_millis() as f64).wrap()),
+        Ok(time) => Ok(Object::number(time.as_millis() as f64)),
         Err(_err) => Err(crate::lox::runtime_error(
-            Expression::Literal(LoxObject::Nil.wrap()),
+            expression,
             LoxErrorType::SystemError,
             "error getting system time",
         )),
     }
 }
 
-pub fn clock(global: Rc<RefCell<Environment>>) -> LoxObject {
-    LoxObject::Function(LoxCallable::native(
+pub fn clock(global: Rc<RefCell<Environment>>) -> ObjectRef {
+    Object::function(LoxFunction::native(
         "clock".to_string(),
         0,
         global,

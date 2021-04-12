@@ -217,7 +217,7 @@ impl Lox {
         // TODO: maybe this should be structured so Lox doesn't need
         // to know what an environment is?
         let environment = Environment::new();
-        let clock = clock(environment.clone()).wrap();
+        let clock = clock(environment.clone());
         environment
             .clone()
             .borrow_mut()

@@ -1,13 +1,5 @@
-use std::{cell::RefCell, collections::HashMap, rc::Rc};
-
-use crate::{
-    interpreter::LoxCallable,
-    lox::{FileLocation, LoxError, LoxErrorType, LoxNumber},
-};
-use crate::{
-    interpreter::{ObjectRef, Bindable},
-    scanner::{Token, TokenType},
-};
+use crate::lox::{FileLocation, LoxError, LoxErrorType, LoxNumber};
+use crate::scanner::{Token, TokenType};
 use uuid::Uuid;
 
 /*******************************************************************************
@@ -37,236 +29,97 @@ implements visitors for each type, binary/grouping/literal/ unary, which each
 in turn produce a string. This is logically equivalent to `ExpressionPrinter`
 trait which each expression implements.
 */
-// TODO make these struct-style enums since I already wrote wrapper methods
 
-// Hey, dummy, start working here when you start again. This is where you
-// need to create expression IDs for each expression that can be used as a
-// hash for the side table. The ID needs to be created with the expression
-// in the parser, and then it can be used to track the expression throughout
-// the program. Also, you can get rid of the hashes for all the other types.
+pub struct Parser {
+    tokens: Vec<Token>,
+    current: FileLocation,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expression {
-    Assignment(ExpressionId, Token, Box<Expression>),
-    Binary(Box<Expression>, Token, Box<Expression>),
-    Grouping(Box<Expression>),
-    Literal(ObjectRef),
-    Logical(Box<Expression>, Token, Box<Expression>),
-    Unary(Token, Box<Expression>),
-    Call(Box<Expression>, Token, Vec<Expression>),
-    This(ExpressionId, Token),
-    Set(Box<Expression>, Token, Box<Expression>),
-    Get(Box<Expression>, Token),
-    Variable(ExpressionId, Token),
+    Assignment {
+        id: ExpressionId,
+        name: Token,
+        value: Box<Expression>,
+    },
+    Binary {
+        left: Box<Expression>,
+        op: Token,
+        right: Box<Expression>,
+    },
+    Grouping {
+        expression: Box<Expression>,
+    },
+    Literal {
+        value: LoxLiteral,
+    },
+    Logical {
+        left: Box<Expression>,
+        op: Token,
+        right: Box<Expression>,
+    },
+    Unary {
+        op: Token,
+        value: Box<Expression>,
+    },
+    Call {
+        callee: Box<Expression>,
+        paren: Token,
+        args: Vec<Expression>,
+    },
+    This {
+        id: ExpressionId,
+        keyword: Token,
+    },
+    Set {
+        object: Box<Expression>,
+        name: Token,
+        value: Box<Expression>,
+    },
+    Get {
+        object: Box<Expression>,
+        name: Token,
+    },
+    Variable {
+        id: ExpressionId,
+        name: Token,
+    },
 }
-
-pub type ExpressionId = u128;
-
-impl Expression {
-    fn assignment(name: Token, value: Expression) -> Expression {
-        Expression::Assignment(Uuid::new_v4().as_u128(), name, Box::new(value))
-    }
-
-    fn binary(l: Expression, t: Token, r: Expression) -> Expression {
-        Expression::Binary(Box::new(l), t, Box::new(r))
-    }
-
-    fn grouping(e: Expression) -> Expression {
-        Expression::Grouping(Box::new(e))
-    }
-
-    fn literal(l: ObjectRef) -> Expression {
-        Expression::Literal(l)
-    }
-
-    fn logical(l: Expression, op: Token, r: Expression) -> Expression {
-        Expression::Logical(Box::new(l), op, Box::new(r))
-    }
-
-    fn unary(t: Token, e: Expression) -> Expression {
-        Expression::Unary(t, Box::new(e))
-    }
-
-    fn variable(t: Token) -> Expression {
-        Expression::Variable(Uuid::new_v4().as_u128(), t)
-    }
-
-    fn call(callee: Expression, paren: Token, params: Vec<Expression>) -> Expression {
-        Expression::Call(Box::new(callee), paren, params)
-    }
-
-    fn this(keyword: Token) -> Expression {
-        Expression::This(Uuid::new_v4().as_u128(), keyword)
-    }
-
-    fn get(object: Expression, name: Token) -> Expression {
-        Expression::Get(Box::new(object), name)
-    }
-
-    fn set(object: Expression, name: Token, value: Expression) -> Expression {
-        Expression::Set(Box::new(object), name, Box::new(value))
-    }
-
-    pub fn get_id(&self) -> ExpressionId {
-        match self {
-            Expression::Variable(id, _) | Expression::Assignment(id, _, _) | Expression::This(id, _) => *id,
-            _ => panic!(format!(
-                "Unrecoverable lox error to get expression id for expression {:?}",
-                self
-            )),
-        }
-    }
-
-    pub fn is_nil(&self) -> bool {
-        match self {
-            Expression::Literal(obj) => obj.borrow().is_nil(),
-            _ => false
-        }
-
-    }
-
-    pub fn is_truthy(obj: ObjectRef) -> bool {
-        match *obj.borrow() {
-            LoxObject::Nil => false,
-            LoxObject::Boolean(b) => b.clone(),
-            _ => true,
-        }
-    }
-
-    pub fn apply_compare(
-        self,
-        op: TokenType,
-        left: ObjectRef,
-        right: ObjectRef,
-    ) -> Result<LoxObject, LoxError> {
-        if let (LoxObject::Number(l), LoxObject::Number(r)) = (&*left.borrow(), &*right.borrow()) {
-            let result = match op {
-                TokenType::Greater => Ok(l > r),
-                TokenType::GreaterEqual => Ok(l >= r),
-                TokenType::Less => Ok(l < r),
-                TokenType::LessEqual => Ok(l <= r),
-                _ => Err(crate::lox::runtime_error(
-                    self,
-                    LoxErrorType::UnknownOperator,
-                    &format!("unable to apply {:?} as a comparison operator", op),
-                )),
-            };
-            result.map(|b| LoxObject::Boolean(b))
-        } else {
-            Err(crate::lox::runtime_error(
-                self,
-                LoxErrorType::TypeError,
-                &format!("cannot apply operation {:?} to non-numeric types", op),
-            ))
-        }
-    }
-}
-#[derive(Debug, Clone, PartialEq)]
-pub enum LoxObject {
-    Boolean(bool),
-    String(String),
-    Number(LoxNumber),
-    Class(LoxClass),
-    Instance(LoxClass, ObjectValues),
-    Function(LoxCallable),
-    Nil,
-}
-
-type ObjectValues = HashMap<String, ObjectRef>;
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct LoxClass {
-    pub name: String,
-    pub methods: HashMap<String, ObjectRef>,
-}
-
-impl LoxClass {
-    pub fn find_method(&self, name: &str) -> Option<ObjectRef> {
-        self.methods.get(name).map(|m| m.clone())
-    }
-}
-
-impl LoxObject {
-    pub fn to_string(&self) -> String {
-        match self {
-            LoxObject::Boolean(b) => format!("{}", b),
-            LoxObject::String(s) => s.clone(),
-            LoxObject::Number(n) => format!("{}", n),
-            // TODO: maybe actually print objects
-            LoxObject::Function(callable) => callable.to_string(),
-            LoxObject::Class(class) => class.name.clone(),
-            LoxObject::Instance(class, _) => format!("<{}>", class.name),
-            LoxObject::Nil => String::from("nil"),
-        }
-    }
-
-    pub fn is_instance(&self) -> bool {
-        match self {
-            LoxObject::Instance(_, _) => true,
-            _ => false,
-        }
-    }
-
-    pub fn is_nil(&self) -> bool {
-        match self {
-            LoxObject::Nil => true,
-            _ => false,
-        }
-    }
-
-    pub fn get_type(&self) -> String {
-        let s = match self {
-            LoxObject::Boolean(_) => "Boolean",
-            LoxObject::String(_) => "String",
-            LoxObject::Number(_) => "Number",
-            LoxObject::Function(_) => "Function",
-            LoxObject::Class(_) => "Class",
-            LoxObject::Instance(_, _) => "Instance",
-            LoxObject::Nil => "Nil",
-        };
-
-        String::from(s)
-    }
-
-    pub fn wrap(self) -> ObjectRef {
-        Rc::new(RefCell::new(self))
-    }
-
-    pub fn set(&mut self, name: String, value: ObjectRef) {
-        match self {
-            LoxObject::Instance(_, fields) => {
-                fields.insert(name, value);
-            }
-            _ => panic!(format!("cannot set property on {}", self.get_type())),
-        }
-    }
-
-    pub fn get(&self, this: ObjectRef, expression: Expression, name: &str) -> Result<ObjectRef, LoxError> {
-        if let LoxObject::Instance(class, fields) = self {
-            if let Some(field) = fields.get(name) {
-                return Ok(field.clone());
-            } else if let Some(method) = class.find_method(name) {
-                return Ok(LoxObject::Function(method.clone().borrow_mut().bind(this)).wrap())
-            }
-        }
-        Err(crate::lox::runtime_error(
-            expression,
-            LoxErrorType::PropertyError,
-            &format!("undefined property {}", name),
-        ))
-    }
-}
-
 #[derive(Debug, Clone, PartialEq)]
 pub enum Statement {
-    Print(Expression),
-    Expression(Expression),
-    Block(Vec<Statement>),
-    Class(Token, Vec<FunctionDefinition>),
-    Var(Token, Option<Expression>),
-    If(Expression, Box<Statement>, Option<Box<Statement>>),
-    Function(FunctionDefinition),
-    While(Expression, Box<Statement>),
-    Return(Token, Expression),
+    Print {
+        expression: Expression,
+    },
+    Expression {
+        expression: Expression,
+    },
+    Block {
+        statements: Vec<Statement>,
+    },
+    Class {
+        name: Token,
+        methods: Vec<FunctionDefinition>,
+    },
+    Var {
+        name: Token,
+        initializer: Option<Expression>,
+    },
+    If {
+        condition: Expression,
+        then_statement: Box<Statement>,
+        else_statement: Option<Box<Statement>>,
+    },
+    Function {
+        definition: FunctionDefinition,
+    },
+    While {
+        condition: Expression,
+        body: Box<Statement>,
+    },
+    Return {
+        keyword: Token,
+        value: Expression,
+    },
     None,
 }
 
@@ -277,10 +130,15 @@ pub struct FunctionDefinition {
     pub body: Vec<Statement>,
 }
 
-pub struct Parser {
-    tokens: Vec<Token>,
-    current: FileLocation,
+#[derive(Debug, Clone, PartialEq)]
+pub enum LoxLiteral {
+    Boolean(bool),
+    String(String),
+    Number(LoxNumber),
+    Nil,
 }
+
+pub type ExpressionId = u128;
 
 impl Parser {
     pub fn new(tokens: Vec<Token>) -> Parser {
@@ -354,11 +212,13 @@ impl Parser {
         }
 
         self.consume(TokenType::RightBrace, "expect '}' after class body")?;
-        Ok(Statement::Class(name, methods))
+        Ok(Statement::Class { name, methods })
     }
 
     fn function(&mut self, kind: &str) -> Result<Statement, LoxError> {
-        Ok(Statement::Function(self.function_definition(kind)?))
+        Ok(Statement::Function {
+            definition: self.function_definition(kind)?,
+        })
     }
 
     fn function_definition(&mut self, kind: &str) -> Result<FunctionDefinition, LoxError> {
@@ -410,7 +270,7 @@ impl Parser {
             TokenType::Semicolon,
             "expected semicolon after variable declaration",
         )?;
-        Ok(Statement::Var(name, initializer))
+        Ok(Statement::Var { name, initializer })
     }
 
     fn _handle_declaration_err(
@@ -438,7 +298,8 @@ impl Parser {
         } else if self.match_token(TokenType::While) {
             self.while_statement()
         } else if self.match_token(TokenType::LeftBrace) {
-            self.block().map(|statements| Statement::Block(statements))
+            self.block()
+                .map(|statements| Statement::Block { statements })
         } else {
             self.expression_statement()
         }
@@ -477,21 +338,30 @@ impl Parser {
         let mut body = self.statement()?;
 
         body = match increment {
-            Some(inc) => Statement::Block(vec![body, Statement::Expression(inc)]),
+            Some(expression) => Statement::Block {
+                statements: vec![body, Statement::Expression { expression }],
+            },
             None => body,
         };
 
         body = match condition {
-            Some(cond) => Statement::While(cond, Box::new(body)),
-            None => Statement::While(
-                Expression::Literal(LoxObject::Boolean(true).wrap()),
-                Box::new(body),
-            ),
+            Some(condition) => Statement::While {
+                condition,
+                body: Box::new(body),
+            },
+            None => Statement::While {
+                condition: Expression::Literal {
+                    value: LoxLiteral::Boolean(true),
+                },
+                body: Box::new(body),
+            },
         };
 
         body = match initializer {
             Statement::None => body,
-            _ => Statement::Block(vec![initializer, body]),
+            _ => Statement::Block {
+                statements: vec![initializer, body],
+            },
         };
 
         Ok(body)
@@ -501,9 +371,9 @@ impl Parser {
         self.consume(TokenType::LeftParen, "expect '(' after 'while'")?;
         let condition = self.expression()?;
         self.consume(TokenType::RightParen, "expect ')' after while condition")?;
-        let body = self.statement()?;
+        let body = Box::new(self.statement()?);
 
-        Ok(Statement::While(condition, Box::new(body)))
+        Ok(Statement::While { condition, body })
     }
 
     fn if_statement(&mut self) -> Result<Statement, LoxError> {
@@ -518,25 +388,31 @@ impl Parser {
             None
         };
 
-        Ok(Statement::If(condition, then_statement, else_statement))
+        Ok(Statement::If {
+            condition,
+            then_statement,
+            else_statement,
+        })
     }
 
     fn print_statement(&mut self) -> Result<Statement, LoxError> {
-        let value = self.expression()?;
+        let expression = self.expression()?;
         self.consume(TokenType::Semicolon, "expect ';' after value")?;
-        Ok(Statement::Print(value))
+        Ok(Statement::Print { expression })
     }
 
     fn return_statement(&mut self) -> Result<Statement, LoxError> {
         let keyword = self.previous();
         let value = if self.check(TokenType::Semicolon) {
-            Expression::Literal(LoxObject::Nil.wrap())
+            Expression::Literal {
+                value: LoxLiteral::Nil,
+            }
         } else {
             self.expression()?
         };
 
         self.consume(TokenType::Semicolon, "expect ';' after return statement")?;
-        Ok(Statement::Return(keyword, value))
+        Ok(Statement::Return { keyword, value })
     }
 
     fn block(&mut self) -> Result<Vec<Statement>, LoxError> {
@@ -551,9 +427,9 @@ impl Parser {
     }
 
     fn expression_statement(&mut self) -> Result<Statement, LoxError> {
-        let expr = self.expression()?;
+        let expression = self.expression()?;
         self.consume(TokenType::Semicolon, "expect ';' after statement")?;
-        Ok(Statement::Expression(expr))
+        Ok(Statement::Expression { expression })
     }
 
     fn expression(&mut self) -> Result<Expression, LoxError> {
@@ -568,9 +444,9 @@ impl Parser {
             let _equals = self.previous();
             let value = self.assignment()?;
 
-            if let Expression::Variable(_, token) = expr {
-                return Ok(Expression::assignment(token, value));
-            } else if let Expression::Get(object, name) = expr {
+            if let Expression::Variable { name, .. } = expr {
+                return Ok(Expression::assignment(name, value));
+            } else if let Expression::Get { object, name } = expr {
                 return Ok(Expression::set(*object, name, value));
             } else {
                 // If it's not valid, report and continue
@@ -721,19 +597,19 @@ impl Parser {
 
     fn primary(&mut self) -> Result<Expression, LoxError> {
         if self.match_token(TokenType::False) {
-            Ok(Expression::literal(LoxObject::Boolean(false).wrap()))
+            Ok(Expression::literal(LoxLiteral::Boolean(false)))
         } else if self.match_token(TokenType::True) {
-            Ok(Expression::literal(LoxObject::Boolean(true).wrap()))
+            Ok(Expression::literal(LoxLiteral::Boolean(true)))
         } else if self.match_token(TokenType::Nil) {
-            Ok(Expression::literal(LoxObject::Nil.wrap()))
+            Ok(Expression::literal(LoxLiteral::Nil))
         } else if self.match_token(TokenType::Number) {
-            Ok(Expression::literal(
-                LoxObject::Number(self.previous().literal.get_number().unwrap()).wrap(),
-            ))
+            Ok(Expression::literal(LoxLiteral::Number(
+                self.previous().literal.get_number().unwrap(),
+            )))
         } else if self.match_token(TokenType::LoxString) {
-            Ok(Expression::literal(
-                LoxObject::String(self.previous().literal.get_string().unwrap()).wrap(),
-            ))
+            Ok(Expression::literal(LoxLiteral::String(
+                self.previous().literal.get_string().unwrap(),
+            )))
         } else if self.match_token(TokenType::This) {
             Ok(Expression::this(self.previous()))
         } else if self.match_token(TokenType::Identifier) {
@@ -814,5 +690,110 @@ impl Parser {
 
     fn is_at_end(&self) -> bool {
         self.peek().token_type == TokenType::Eof
+    }
+}
+
+impl Expression {
+    fn assignment(name: Token, value: Expression) -> Expression {
+        let value = Box::new(value);
+        Expression::Assignment {
+            id: Uuid::new_v4().as_u128(),
+            value,
+            name,
+        }
+    }
+
+    fn binary(l: Expression, op: Token, r: Expression) -> Expression {
+        let left = Box::new(l);
+        let right = Box::new(r);
+        Expression::Binary { left, right, op }
+    }
+
+    fn grouping(e: Expression) -> Expression {
+        Expression::Grouping {
+            expression: Box::new(e),
+        }
+    }
+
+    fn literal(l: LoxLiteral) -> Expression {
+        Expression::Literal { value: l }
+    }
+
+    fn logical(l: Expression, op: Token, r: Expression) -> Expression {
+        let left = Box::new(l);
+        let right = Box::new(r);
+        Expression::Logical { left, right, op }
+    }
+
+    fn unary(op: Token, value: Expression) -> Expression {
+        let value = Box::new(value);
+        Expression::Unary { op, value }
+    }
+
+    fn variable(name: Token) -> Expression {
+        Expression::Variable {
+            id: Uuid::new_v4().as_u128(),
+            name,
+        }
+    }
+
+    fn call(callee: Expression, paren: Token, args: Vec<Expression>) -> Expression {
+        let callee = Box::new(callee);
+        Expression::Call {
+            callee,
+            paren,
+            args,
+        }
+    }
+
+    fn this(keyword: Token) -> Expression {
+        Expression::This {
+            id: Uuid::new_v4().as_u128(),
+            keyword,
+        }
+    }
+
+    fn get(object: Expression, name: Token) -> Expression {
+        let object = Box::new(object);
+        Expression::Get { object, name }
+    }
+
+    fn set(object: Expression, name: Token, value: Expression) -> Expression {
+        let object = Box::new(object);
+        let value = Box::new(value);
+        Expression::Set {
+            object,
+            name,
+            value,
+        }
+    }
+
+    pub fn get_id(&self) -> ExpressionId {
+        match self {
+            Expression::Variable { id, .. }
+            | Expression::Assignment { id, .. }
+            | Expression::This { id, .. } => *id,
+            _ => panic!(format!(
+                "Unrecoverable lox error to get expression id for expression {:?}",
+                self
+            )),
+        }
+    }
+
+    pub fn is_nil(&self) -> bool {
+        match self {
+            Expression::Literal { value } => value.is_nil(),
+            _ => false,
+        }
+    }
+}
+
+impl LoxLiteral {
+    fn is_nil(&self) -> bool {
+        if let LoxLiteral::Nil = self {
+            true
+        } else {
+            false
+        }
     }
 }

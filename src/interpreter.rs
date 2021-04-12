@@ -1,7 +1,10 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
-use crate::parser::{Expression, LoxClass, LoxObject, Statement};
 use crate::scanner::{Token, TokenType};
+use crate::{
+    lox::LoxNumber,
+    parser::{Expression, LoxLiteral, Statement},
+};
 use crate::{
     lox::{LoxError, LoxErrorType},
     parser::{ExpressionId, FunctionDefinition},
@@ -30,21 +33,6 @@ The interpreter's job is to produce a value for each expression.
 
 *******************************************************************************/
 
-pub trait AstPrinter {
-    fn to_string(&self) -> String;
-}
-
-/*
-The Interpreter consumes the expression completely because it pulls the
-components out to evaluate them. If you need to re-use the whole expression,
-you should clone it first.
-
-TODO: The environment in the book is a property of the Interpreter class, but
-we implement enterpreter for both expression and statement, and it looks like
-the environment is setting up to be not only mutable but movable, so I'm going
-to pass in a parameter for now until I've got more details. Clean this up
-later.
-*/
 pub struct Interpreter {
     pub environment: SharedEnvironment,
     locals: Locals,
@@ -52,96 +40,379 @@ pub struct Interpreter {
 }
 
 type Locals = HashMap<ExpressionId, u16>;
+type SharedEnvironment = Rc<RefCell<Environment>>;
+pub type ObjectRef = Rc<RefCell<Object>>;
+pub type FunctionRef = Rc<RefCell<LoxFunction>>;
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Environment {
+    values: HashMap<String, ObjectRef>,
+    enclosing: Option<SharedEnvironment>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct LoxClass {
+    name: String,
+    methods: HashMap<String, FunctionRef>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Object {
+    // This exists solely to keep the `value` field private
+    value: ObjectType,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+enum ObjectType {
+    Primitive(PrimitiveObject),
+    Instance(Instance),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct Instance {
+    class: LoxClass,
+    fields: HashMap<String, ObjectRef>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+enum PrimitiveObject {
+    Boolean(bool),
+    Number(LoxNumber),
+    String(String),
+    Function(FunctionRef),
+    Class(LoxClass),
+    Nil,
+}
+
+#[derive(Clone)]
+pub struct LoxFunction {
+    arity: u8,
+    closure: SharedEnvironment,
+    exec: Executable,
+    is_initializer: bool,
+    name: String,
+}
+
+#[derive(Clone)]
+enum Executable {
+    Constructor(LoxClass),
+    Interpreted(Vec<Statement>, Vec<String>),
+    Native(fn(Vec<ObjectRef>, Expression) -> Result<ObjectRef, LoxError>),
+}
+
+pub trait AstPrinter {
+    fn to_string_indent(&self, indent: u8) -> String;
+
+    fn to_string(&self) -> String {
+        self.to_string_indent(0)
+    }
+}
+
+pub trait Bindable {
+    fn bind(&mut self, obj: ObjectRef) -> LoxFunction;
+}
 
 fn take_parent(env: &SharedEnvironment) -> SharedEnvironment {
     env.clone().borrow().enclosing.clone().unwrap()
 }
 
 impl AstPrinter for Expression {
-    fn to_string(&self) -> String {
+    fn to_string_indent(&self, _indent: u8) -> String {
         match self {
-            Expression::Assignment(_, n, v) => format!("(assign {} {})", n.lexeme, v.to_string()),
-            Expression::Binary(l, t, r) => {
-                format!("({} {} {})", t.lexeme, l.to_string(), r.to_string())
+            Expression::Assignment { name, value, .. } => {
+                format!("{} = {}", name.lexeme, value.to_string())
             }
-            Expression::Grouping(e) => format!("{}", e.to_string()),
-            Expression::Literal(l) => l.borrow().to_string(),
-            Expression::Logical(l, op, r) => {
-                format!("({} {} {})", op.lexeme, l.to_string(), r.to_string())
+            Expression::Logical { left, op, right } | Expression::Binary { left, op, right } => {
+                format!("{} {} {}", left.to_string(), op.lexeme, right.to_string())
             }
-            Expression::Unary(t, e) => format!("({} {})", t.lexeme, e.to_string()),
-            Expression::Call(callee, _, args) => {
+            Expression::Grouping { expression } => format!("({})", expression.to_string()),
+            Expression::Literal { value } => format!("{:?}", value),
+            Expression::Unary { op, value } => format!("{}{}", op.lexeme, value.to_string()),
+            Expression::Call { callee, args, .. } => {
                 let args: Vec<String> = args.iter().map(|arg| arg.to_string()).collect();
-                format!("({} {})", callee.to_string(), args.join(" "))
+                format!("{}({})", callee.to_string(), args.join(" "))
             }
-            Expression::This(_, _) => "this".to_string(),
-            Expression::Set(object, name, value) => format!(
+            Expression::This { .. } => "this".to_string(),
+            Expression::Set {
+                object,
+                name,
+                value,
+            } => format!(
                 "{}.{} = {}",
                 object.to_string(),
                 name.lexeme,
                 value.to_string()
             ),
-            Expression::Get(object, name) => format!("{}.{}", object.to_string(), name.lexeme),
-            Expression::Variable(_, t) => format!("{}", t.lexeme),
+            Expression::Get { object, name } => format!("{}.{}", object.to_string(), name.lexeme),
+            Expression::Variable { name, .. } => format!("{}", name.lexeme),
         }
     }
 }
 
 impl AstPrinter for Statement {
-    fn to_string(&self) -> String {
+    fn to_string_indent(&self, indent: u8) -> String {
+        let prefix_whitespace: Vec<String> = std::iter::repeat("    ".to_string())
+            .take(indent.into())
+            .collect();
+        let prefix_whitespace = prefix_whitespace.join("");
         match self {
-            Statement::Block(statements) => {
-                let printed: Vec<String> = statements.iter().map(|s| s.to_string()).collect();
-                format!("(do {})", printed.join(" "))
+            Statement::Block { statements } => {
+                let printed: Vec<String> = statements
+                    .iter()
+                    .map(|s| s.to_string_indent(indent + 1))
+                    .collect();
+                format!(
+                    "{}{{\n{}{}\n}}\n",
+                    prefix_whitespace,
+                    printed.join("\n"),
+                    prefix_whitespace
+                )
             }
-            Statement::Print(expr) => format!("(print {})", expr.to_string()),
-            Statement::Expression(expr) => format!("({})", expr.to_string()),
-            Statement::Var(name, Some(value)) => {
-                format!("(define {} {})", name.lexeme, value.to_string())
+            Statement::Print { expression } => {
+                format!("{}print {};\n", prefix_whitespace, expression.to_string())
             }
-            Statement::Var(name, None) => format!("(define {} nil)", name.lexeme),
-            Statement::If(condition, then_st, Some(else_st)) => format!(
-                "(if ({}) ({}) ({}))",
-                condition.to_string(),
-                then_st.to_string(),
-                else_st.to_string()
+            Statement::Expression { expression } => {
+                format!("{}{};\n", prefix_whitespace, expression.to_string())
+            }
+            Statement::Var {
+                name,
+                initializer: Some(value),
+            } => format!(
+                "{}var {} = {};\n",
+                prefix_whitespace,
+                name.lexeme,
+                value.to_string()
             ),
-            Statement::If(condition, then_st, None) => {
-                format!("(if ({}) ({}))", condition.to_string(), then_st.to_string())
-            }
-            Statement::While(condition, do_st) => format!(
-                "(do-while ({}) ({})",
+            Statement::Var {
+                name,
+                initializer: None,
+            } => format!("{}var {};\n", prefix_whitespace, name.lexeme),
+            Statement::If {
+                condition,
+                then_statement,
+                else_statement: Some(else_st),
+            } => format!(
+                "{}if ({}) \n{}\n{}\n",
+                prefix_whitespace,
                 condition.to_string(),
-                do_st.to_string()
+                then_statement.to_string_indent(indent + 1),
+                else_st.to_string_indent(indent + 1)
             ),
-            Statement::Return(_keyword, value) => format!("(return {})", value.to_string()),
-            Statement::Function(definition) => format!(
-                "(define ({} {}) ({}))",
+            Statement::If {
+                condition,
+                then_statement,
+                else_statement: None,
+            } => format!(
+                "{}if ({}) \n{}\n",
+                prefix_whitespace,
+                condition.to_string(),
+                then_statement.to_string_indent(indent + 1),
+            ),
+            Statement::While { condition, body } => format!(
+                "{}while ({}) \n{}\n",
+                prefix_whitespace,
+                condition.to_string(),
+                body.to_string_indent(indent + 1)
+            ),
+            Statement::Return { value, .. } => format!("return {};\n", value.to_string()),
+            Statement::Function { definition } => format!(
+                "{}fun {}({}) \n{}",
+                prefix_whitespace,
                 definition.name.lexeme,
                 definition
                     .params
                     .iter()
                     .map(|p| p.lexeme.to_owned())
                     .collect::<Vec<String>>()
-                    .join(" "),
-                definition
-                    .body
-                    .iter()
-                    .map(|s| s.clone().to_string())
-                    .collect::<Vec<String>>()
-                    .join(" "),
+                    .join(", "),
+                Statement::Block {
+                    statements: definition.body.clone()
+                }
+                .to_string_indent(indent + 1)
             ),
-            Statement::None => "()".to_owned(),
-            Statement::Class(name, definition) => format!(
-                "(class {} ({}))",
+            Statement::None => "\n".to_owned(),
+            Statement::Class { name, methods } => format!(
+                "{}class {} {{\n{}\n{}}}",
+                prefix_whitespace,
                 name.lexeme,
-                definition
+                methods
                     .iter()
-                    .map(|f| Statement::Function(f.clone()).to_string())
+                    .map(|f| Statement::Function {
+                        definition: f.clone()
+                    }
+                    .to_string_indent(indent + 1))
                     .collect::<Vec<String>>()
-                    .join(" ")
+                    .join(" "),
+                prefix_whitespace,
             ),
         }
+    }
+}
+
+impl LoxClass {
+    pub fn find_method(&self, name: &str) -> Option<FunctionRef> {
+        self.methods.get(name).map(|m| m.clone())
+    }
+}
+
+impl std::convert::From<LoxLiteral> for PrimitiveObject {
+    fn from(literal: LoxLiteral) -> Self {
+        match literal {
+            LoxLiteral::Boolean(b) => PrimitiveObject::Boolean(b),
+            LoxLiteral::String(s) => PrimitiveObject::String(s),
+            LoxLiteral::Number(n) => PrimitiveObject::Number(n),
+            LoxLiteral::Nil => PrimitiveObject::Nil,
+        }
+    }
+}
+
+impl std::convert::From<LoxLiteral> for Object {
+    fn from(literal: LoxLiteral) -> Self {
+        Object {
+            value: ObjectType::Primitive(PrimitiveObject::from(literal)),
+        }
+    }
+}
+
+impl Object {
+    pub fn wrap(self) -> ObjectRef {
+        Rc::new(RefCell::new(self))
+    }
+
+    pub fn to_string(&self) -> String {
+        self.value.to_string()
+    }
+
+    pub fn nil() -> ObjectRef {
+        Object {
+            value: ObjectType::Primitive(PrimitiveObject::Nil),
+        }
+        .wrap()
+    }
+
+    pub fn number(f: LoxNumber) -> ObjectRef {
+        Object {
+            value: ObjectType::Primitive(PrimitiveObject::Number(f)),
+        }
+        .wrap()
+    }
+
+    pub fn boolean(b: bool) -> ObjectRef {
+        Object {
+            value: ObjectType::Primitive(PrimitiveObject::Boolean(b)),
+        }
+        .wrap()
+    }
+
+    pub fn string(s: String) -> ObjectRef {
+        Object {
+            value: ObjectType::Primitive(PrimitiveObject::String(s)),
+        }
+        .wrap()
+    }
+
+    pub fn function(f: FunctionRef) -> ObjectRef {
+        Object {
+            value: ObjectType::Primitive(PrimitiveObject::Function(f)),
+        }
+        .wrap()
+    }
+
+    // Classes and instances are private to the interpreter
+    fn class(c: LoxClass) -> ObjectRef {
+        Object {
+            value: ObjectType::Primitive(PrimitiveObject::Class(c)),
+        }
+        .wrap()
+    }
+
+    fn instance(i: Instance) -> ObjectRef {
+        Object {
+            value: ObjectType::Instance(i),
+        }
+        .wrap()
+    }
+}
+
+impl ObjectType {
+    pub fn is_instance(&self) -> bool {
+        match self {
+            Self::Instance(_) => true,
+            _ => false,
+        }
+    }
+
+    pub fn _is_nil(&self) -> bool {
+        match self {
+            Self::Primitive(PrimitiveObject::Nil) => true,
+            _ => false,
+        }
+    }
+
+    fn is_truthy(&self) -> bool {
+        match self {
+            Self::Primitive(PrimitiveObject::Nil) => false,
+            Self::Primitive(PrimitiveObject::Boolean(b)) => b.clone(),
+            _ => true,
+        }
+    }
+
+    pub fn to_string(&self) -> String {
+        match self {
+            Self::Primitive(primitive) => match primitive {
+                PrimitiveObject::Boolean(b) => format!("{}", b),
+                PrimitiveObject::String(s) => s.clone(),
+                PrimitiveObject::Number(n) => format!("{}", n),
+                PrimitiveObject::Function(callable) => callable.borrow().to_string(),
+                PrimitiveObject::Class(class) => class.name.clone(),
+                PrimitiveObject::Nil => String::from("nil"),
+            },
+            // TODO: maybe actually print objects
+            Self::Instance(object) => format!("<{}>", object.class.name),
+        }
+    }
+
+    pub fn get_type(&self) -> String {
+        let s = match self {
+            Self::Primitive(PrimitiveObject::Boolean(_)) => "Boolean",
+            Self::Primitive(PrimitiveObject::String(_)) => "String",
+            Self::Primitive(PrimitiveObject::Number(_)) => "Number",
+            Self::Primitive(PrimitiveObject::Function(_)) => "Function",
+            Self::Primitive(PrimitiveObject::Class(_)) => "Class",
+            Self::Primitive(PrimitiveObject::Nil) => "Nil",
+            Self::Instance(Instance { class, .. }) => &class.name,
+        };
+
+        String::from(s)
+    }
+
+    pub fn set(&mut self, name: String, value: ObjectRef) {
+        match self {
+            Self::Instance(Instance { fields, .. }) => {
+                fields.insert(name, value);
+            }
+            _ => panic!(format!("cannot set property on {}", self.get_type())),
+        }
+    }
+
+    pub fn get(
+        &self,
+        this: ObjectRef,
+        expression: Expression,
+        name: &str,
+    ) -> Result<ObjectRef, LoxError> {
+        if let Self::Instance(Instance { class, fields }) = self {
+            if let Some(field) = fields.get(name) {
+                return Ok(field.clone());
+            } else if let Some(method) = class.find_method(name) {
+                return Ok(Object::function(method.clone().borrow_mut().bind(this)));
+            }
+        }
+        Err(crate::lox::runtime_error(
+            expression,
+            LoxErrorType::PropertyError,
+            &format!("undefined property {}", name),
+        ))
     }
 }
 
@@ -225,31 +496,33 @@ impl Interpreter {
 
     fn interpret_expression(&mut self, expression: Expression) -> Result<ObjectRef, LoxError> {
         match expression.clone() {
-            Expression::Grouping(expr) => self.interpret_expression(*expr),
-            Expression::Literal(obj) => Ok(obj.clone()),
-            Expression::Unary(op, value) => {
+            Expression::Grouping { expression } => self.interpret_expression(*expression),
+            Expression::Literal { value } => Ok(Object::from(value.clone()).wrap()),
+            Expression::Unary { op, value } => {
                 let obj = self.interpret_expression(*value.clone())?;
                 match op.token_type {
                     TokenType::Minus => {
-                        if let LoxObject::Number(n) = *obj.borrow() {
-                            Ok(LoxObject::Number(-n).wrap())
+                        if let ObjectType::Primitive(PrimitiveObject::Number(n)) =
+                            obj.borrow().value
+                        {
+                            Ok(Object::number(-n))
                         } else {
                             Err(crate::lox::runtime_error(
                                 *value,
                                 LoxErrorType::TypeError,
                                 &format!(
                                     "cannot negate `{}` — expected Number, found {}",
-                                    obj.borrow().to_string(),
-                                    obj.borrow().get_type()
+                                    obj.borrow().value.to_string(),
+                                    obj.borrow().value.get_type()
                                 ),
                             ))
                         }
                     }
                     TokenType::Bang => {
-                        if Expression::is_truthy(obj) {
-                            Ok(LoxObject::Boolean(false).wrap())
+                        if obj.borrow_mut().value.is_truthy() {
+                            Ok(Object::boolean(false))
                         } else {
-                            Ok(LoxObject::Boolean(true).wrap())
+                            Ok(Object::boolean(true))
                         }
                     }
                     _ => Err(crate::lox::runtime_error(
@@ -259,23 +532,27 @@ impl Interpreter {
                     )),
                 }
             }
-            Expression::Binary(left, op, right) => {
+            Expression::Binary { left, op, right } => {
                 let robj = self.interpret_expression(*right)?;
                 let lobj = self.interpret_expression(*left)?;
 
                 match op.token_type {
-                    TokenType::Minus => match (&*lobj.borrow(), &*robj.borrow()) {
-                        (LoxObject::Number(l), LoxObject::Number(r)) => {
-                            Ok(LoxObject::Number(l - r).wrap())
-                        }
+                    TokenType::Minus => match (&lobj.borrow().value, &robj.borrow().value) {
+                        (
+                            ObjectType::Primitive(PrimitiveObject::Number(l)),
+                            ObjectType::Primitive(PrimitiveObject::Number(r)),
+                        ) => Ok(Object::number(l - r)),
                         _ => Err(crate::lox::runtime_error(
                             expression.clone(),
                             LoxErrorType::TypeError,
                             "cannot subtract non-numbers",
                         )),
                     },
-                    TokenType::Slash => match (&*lobj.borrow(), &*robj.borrow()) {
-                        (LoxObject::Number(l), LoxObject::Number(r)) => {
+                    TokenType::Slash => match (&lobj.borrow().value, &robj.borrow().value) {
+                        (
+                            ObjectType::Primitive(PrimitiveObject::Number(l)),
+                            ObjectType::Primitive(PrimitiveObject::Number(r)),
+                        ) => {
                             if *r == 0.0 {
                                 Err(crate::lox::runtime_error(
                                     expression.clone(),
@@ -283,7 +560,7 @@ impl Interpreter {
                                     "divide by zero",
                                 ))
                             } else {
-                                Ok(LoxObject::Number(l / r).wrap())
+                                Ok(Object::number(l / r))
                             }
                         }
                         _ => Err(crate::lox::runtime_error(
@@ -292,23 +569,26 @@ impl Interpreter {
                             "cannot divide non-numbers",
                         )),
                     },
-                    TokenType::Star => match (&*lobj.borrow(), &*robj.borrow()) {
-                        (LoxObject::Number(l), LoxObject::Number(r)) => {
-                            Ok(LoxObject::Number(l * r).wrap())
-                        }
+                    TokenType::Star => match (&lobj.borrow().value, &robj.borrow().value) {
+                        (
+                            ObjectType::Primitive(PrimitiveObject::Number(l)),
+                            ObjectType::Primitive(PrimitiveObject::Number(r)),
+                        ) => Ok(Object::number(l * r)),
                         _ => Err(crate::lox::runtime_error(
                             expression.clone(),
                             LoxErrorType::TypeError,
                             "cannot multiply non-numbers",
                         )),
                     },
-                    TokenType::Plus => match (&*lobj.borrow(), &*robj.borrow()) {
-                        (LoxObject::Number(l), LoxObject::Number(r)) => {
-                            Ok(LoxObject::Number(l + r).wrap())
-                        }
-                        (LoxObject::String(l), LoxObject::String(r)) => {
-                            Ok(LoxObject::String(l.clone() + &r).wrap())
-                        }
+                    TokenType::Plus => match (&lobj.borrow().value, &robj.borrow().value) {
+                        (
+                            ObjectType::Primitive(PrimitiveObject::Number(l)),
+                            ObjectType::Primitive(PrimitiveObject::Number(r)),
+                        ) => Ok(Object::number(l + r)),
+                        (
+                            ObjectType::Primitive(PrimitiveObject::String(l)),
+                            ObjectType::Primitive(PrimitiveObject::String(r)),
+                        ) => Ok(Object::string(l.clone() + &r)),
                         _ => Err(crate::lox::runtime_error(
                             expression.clone(),
                             LoxErrorType::TypeError,
@@ -318,16 +598,19 @@ impl Interpreter {
                     TokenType::Greater
                     | TokenType::GreaterEqual
                     | TokenType::Less
-                    | TokenType::LessEqual => {
-                        Ok(expression.apply_compare(op.token_type, lobj, robj)?.wrap())
-                    }
-                    TokenType::EqualEqual => Ok(LoxObject::Boolean(lobj == robj).wrap()),
-                    TokenType::BangEqual => Ok(LoxObject::Boolean(lobj != robj).wrap()),
+                    | TokenType::LessEqual => Ok(self.apply_compare(
+                        op.token_type,
+                        &*lobj.borrow(),
+                        &*robj.borrow(),
+                        expression,
+                    )?),
+                    TokenType::EqualEqual => Ok(Object::boolean(lobj == robj)),
+                    TokenType::BangEqual => Ok(Object::boolean(lobj != robj)),
                     _ => panic!("unimplemented binary operator"),
                 }
             }
-            Expression::Variable(_, token) => self.lookup_variable(token, expression),
-            Expression::Assignment(_, name, value) => {
+            Expression::Variable { name, .. } => self.lookup_variable(name, expression),
+            Expression::Assignment { name, value, .. } => {
                 // TODO: This clone could be super expensive, if the whole program is one assignment
                 crate::lox::trace(format!(
                     ">>> Modifying environment={}",
@@ -346,18 +629,18 @@ impl Interpreter {
 
                 Ok(value)
             }
-            Expression::Logical(l, op, r) => {
-                let left = self.interpret_expression(*l)?;
+            Expression::Logical { left, op, right } => {
+                let left = self.interpret_expression(*left)?;
 
-                if op.token_type == TokenType::Or && Expression::is_truthy(left.clone()) {
+                if op.token_type == TokenType::Or && left.borrow().value.is_truthy() {
                     Ok(left)
-                } else if op.token_type == TokenType::And && !Expression::is_truthy(left.clone()) {
+                } else if op.token_type == TokenType::And && !left.borrow().value.is_truthy() {
                     Ok(left)
                 } else {
-                    self.interpret_expression(*r)
+                    self.interpret_expression(*right)
                 }
             }
-            Expression::Call(callee, _paren, args) => {
+            Expression::Call { callee, args, .. } => {
                 crate::lox::trace(format!(
                     ">>> Calling function with environment={}",
                     self.environment.borrow().to_string()
@@ -369,30 +652,32 @@ impl Interpreter {
                     arguments.push(self.interpret_expression(arg)?);
                 }
 
-                let mut func: LoxCallable = LoxCallable::try_from(callee_obj)?;
-                if func.arity() as usize != arguments.len() {
+                let func = LoxFunction::try_from(callee_obj, &expression)?;
+                if func.borrow().arity as usize != arguments.len() {
                     Err(crate::lox::runtime_error(
                         *callee,
                         LoxErrorType::FunctionCallError,
                         &format!(
                             "expected {} arguments but got {}.",
-                            func.arity(),
+                            func.borrow().arity,
                             arguments.len()
                         ),
                     ))
                 } else {
-                    func.call(self, arguments)
+                    func.borrow_mut().call(self, arguments, expression)
                 }
             }
-            Expression::This(_, keyword) => {
-                self.lookup_variable(keyword, expression)
-            }
-            Expression::Set(object, name, value) => {
+            Expression::This { keyword, .. } => self.lookup_variable(keyword, expression),
+            Expression::Set {
+                object,
+                name,
+                value,
+            } => {
                 let object = self.interpret_expression(*object)?;
 
-                if object.borrow().is_instance() {
+                if object.borrow().value.is_instance() {
                     let value = self.interpret_expression(*value)?;
-                    object.borrow_mut().set(name.lexeme, value.clone());
+                    object.borrow_mut().value.set(name.lexeme, value.clone());
                     // TODO, and this will probably be far-reaching, object fields need to be Rc references.
                     // this will appear as a bug where object state changes aren't persisted
                     Ok(value)
@@ -404,10 +689,13 @@ impl Interpreter {
                     ))
                 }
             }
-            Expression::Get(object, name) => {
+            Expression::Get { object, name } => {
                 let object = self.interpret_expression(*object)?;
-                if object.borrow().is_instance() {
-                    object.borrow().get(object.clone(), expression, &name.lexeme)
+                if object.borrow().value.is_instance() {
+                    object
+                        .borrow()
+                        .value
+                        .get(object.clone(), expression, &name.lexeme)
                 } else {
                     Err(crate::lox::runtime_error(
                         expression,
@@ -426,35 +714,35 @@ impl Interpreter {
             self.environment.borrow().to_string()
         ));
         match statement.clone() {
-            Statement::Print(expr) => {
-                let obj = self.interpret_expression(expr)?;
-                println!("{}", obj.borrow().to_string());
+            Statement::Print { expression } => {
+                let obj = self.interpret_expression(expression)?;
+                println!("{}", obj.borrow().value.to_string());
                 Ok(obj)
             }
-            Statement::Expression(expr) => self.interpret_expression(expr),
-            Statement::Var(token, expr) => {
-                let value = match expr {
+            Statement::Expression { expression } => self.interpret_expression(expression),
+            Statement::Var { name, initializer } => {
+                let value = match initializer {
                     Some(expr) => self.interpret_expression(expr),
-                    None => Ok(LoxObject::Nil.wrap()),
+                    None => Ok(Object::nil()),
                 }?;
                 crate::lox::trace(format!(
                     ">>> Defining new variable={} value={}",
-                    token.lexeme,
-                    value.borrow().to_string()
+                    name.lexeme,
+                    value.borrow().value.to_string()
                 ));
                 self.environment
                     .borrow_mut()
-                    .define(token.lexeme, value.clone());
+                    .define(name.lexeme, value.clone());
                 crate::lox::trace(format!(
                     ">>> After definition env={}",
                     self.environment.borrow().to_string()
                 ));
                 Ok(value)
             }
-            Statement::Block(statements) => {
+            Statement::Block { statements } => {
                 self.environment = Environment::extend(self.environment.clone());
 
-                let mut last = LoxObject::Nil.wrap();
+                let mut last = Object::nil();
                 for statement in statements {
                     last = self.interpret_statement(statement)?;
                 }
@@ -462,29 +750,42 @@ impl Interpreter {
                 self.environment = take_parent(&self.environment);
                 Ok(last)
             }
-            Statement::If(cond, then_st, else_st) => {
-                if Expression::is_truthy(self.interpret_expression(cond)?) {
-                    self.interpret_statement(*then_st)
+            Statement::If {
+                condition,
+                then_statement,
+                else_statement,
+            } => {
+                if self
+                    .interpret_expression(condition)?
+                    .borrow()
+                    .value
+                    .is_truthy()
+                {
+                    self.interpret_statement(*then_statement)
                 } else {
-                    match else_st {
-                        Some(st) => self.interpret_statement(*st),
-                        None => Ok(LoxObject::Nil.wrap()),
+                    match else_statement {
+                        Some(statement) => self.interpret_statement(*statement),
+                        None => Ok(Object::nil()),
                     }
                 }
             }
-            Statement::While(cond, do_st) => {
-                // TODO: This is expensive, maybe don't consume on interpret?
-                while Expression::is_truthy(self.interpret_expression(cond.clone())?) {
-                    self.interpret_statement(*do_st.clone())?;
+            Statement::While { condition, body } => {
+                while self
+                    .interpret_expression(condition.clone())?
+                    .borrow()
+                    .value
+                    .is_truthy()
+                {
+                    self.interpret_statement(*body.clone())?;
                 }
 
-                Ok(LoxObject::Nil.wrap())
+                Ok(Object::nil())
             }
-            Statement::Return(_keyword, expression) => {
-                let value = self.interpret_expression(expression)?;
+            Statement::Return { value, .. } => {
+                let value = self.interpret_expression(value)?;
                 Err(LoxError::ReturnPseudoError { value })
             }
-            Statement::Function(definition) => {
+            Statement::Function { definition } => {
                 let params = definition
                     .params
                     .iter()
@@ -492,7 +793,7 @@ impl Interpreter {
                     .collect();
                 // TODO: when creating closures will have to do some unsafe wizardry
                 // in order for function environments to point back to the functions
-                let func = LoxObject::Function(LoxCallable::interpreted(
+                let func = Object::function(LoxFunction::interpreted(
                     definition.name.lexeme.clone(),
                     params,
                     definition.body,
@@ -500,50 +801,82 @@ impl Interpreter {
                 ));
                 self.environment
                     .borrow_mut()
-                    .define(definition.name.lexeme, func.wrap());
-                Ok(LoxObject::Nil.wrap())
+                    .define(definition.name.lexeme, func);
+                Ok(Object::nil())
             }
-            Statement::None => Ok(LoxObject::Nil.wrap()),
-            Statement::Class(name, definition) => {
+            Statement::None => Ok(Object::nil()),
+            Statement::Class { name, methods } => {
                 self.environment
                     .borrow_mut()
-                    .define(name.lexeme.clone(), LoxObject::Nil.wrap());
+                    .define(name.lexeme.clone(), Object::nil());
 
-                let methods: HashMap<String, ObjectRef> = definition
-                        .iter()
-                        .map(|FunctionDefinition {name, params, body}| {
-                            let params = params.iter().map(|token| token.lexeme.clone()).collect();
-                            (
+                let methods: HashMap<String, FunctionRef> = methods
+                    .iter()
+                    .map(|FunctionDefinition { name, params, body }| {
+                        let params = params.iter().map(|token| token.lexeme.clone()).collect();
+                        (
+                            name.lexeme.clone(),
+                            LoxFunction::interpreted(
                                 name.lexeme.clone(),
-                                LoxObject::Function(
-                                    LoxCallable::interpreted(name.lexeme.clone(), params, body.clone(), self.environment.clone())
-                                )
-                            )
-                        })
-                        .map(|(name, obj)| (name, obj.wrap()))
-                        .collect();
-                let class = LoxObject::Class(LoxClass {
+                                params,
+                                body.clone(),
+                                self.environment.clone(),
+                            ),
+                        )
+                    })
+                    .collect();
+                let class = Object::class(LoxClass {
                     name: name.lexeme.clone(),
                     methods,
-                }).wrap();
+                });
 
                 // TODO um, the book uses `assign` here, but I deleted that and can't remember why
-                self.environment.borrow_mut().define(name.lexeme.clone(), class.clone());
+                self.environment
+                    .borrow_mut()
+                    .define(name.lexeme.clone(), class.clone());
                 Ok(class)
             }
         }
     }
+
+    pub fn apply_compare(
+        &self,
+        op: TokenType,
+        left: &Object,
+        right: &Object,
+        expression: Expression,
+    ) -> Result<ObjectRef, LoxError> {
+        if let (
+            ObjectType::Primitive(PrimitiveObject::Number(l)),
+            ObjectType::Primitive(PrimitiveObject::Number(r)),
+        ) = (&left.value, &right.value)
+        {
+            let result = match op {
+                TokenType::Greater => Ok(l > r),
+                TokenType::GreaterEqual => Ok(l >= r),
+                TokenType::Less => Ok(l < r),
+                TokenType::LessEqual => Ok(l <= r),
+                _ => Err(crate::lox::runtime_error(
+                    expression,
+                    LoxErrorType::UnknownOperator,
+                    &format!("unable to apply {:?} as a comparison operator", op),
+                )),
+            };
+            result.map(|b| Object::boolean(b))
+        } else {
+            Err(crate::lox::runtime_error(
+                expression,
+                LoxErrorType::TypeError,
+                &format!("cannot apply operation {:?} to non-numeric types", op),
+            ))
+        }
+    }
 }
 
-type SharedEnvironment = Rc<RefCell<Environment>>;
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct Environment {
-    values: HashMap<String, ObjectRef>,
-    enclosing: Option<SharedEnvironment>,
-}
-
-pub type ObjectRef = Rc<RefCell<LoxObject>>;
+/**
+ * Environment section
+ * These are all of the procedures for modifying and retrieving values from an environment
+ */
 
 impl Environment {
     pub fn new() -> SharedEnvironment {
@@ -564,7 +897,7 @@ impl Environment {
         crate::lox::trace(format!(
             ">>> Inserted into environment name={} val={}",
             name,
-            value.borrow().to_string()
+            value.borrow().value.to_string()
         ));
         self.values.insert(name, value);
         crate::lox::trace(format!(
@@ -572,9 +905,7 @@ impl Environment {
             self.values
         ));
     }
-}
 
-impl AstPrinter for Environment {
     fn to_string(&self) -> String {
         let values: Vec<String> = self
             .values
@@ -589,24 +920,14 @@ impl AstPrinter for Environment {
     }
 }
 
-/*
- * For now, I'm using dynamic scope because it's possible to implement it and
- * I have no way to extend a scope with two parents. The lox implementation of
- * the book extends the global variables with a new scope containing only the
- * funciton arguments, but I'm not sure how the function names for recursive
- * definitions work in that case?? Whatever... I'm not worried about it. I can
- * come back to it later.
+/**
+ * Function section
+ * These are all the procedures for creating, executing, and modifying functions, methods,
+ * and constructors.
  */
-#[derive(Clone)]
-pub struct LoxCallable {
-    arity: u8,
-    closure: SharedEnvironment,
-    exec: Executable,
-    is_initializer: bool,
-    name: String,
-}
 
-impl std::fmt::Debug for LoxCallable {
+// Implemented so that object class can be debugged
+impl std::fmt::Debug for LoxFunction {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.to_string())
     }
@@ -614,37 +935,35 @@ impl std::fmt::Debug for LoxCallable {
 
 // TODO: we could theoretically give each function some ID to track,
 // and compare equal if the ids are equal even though the two would be clones
-impl PartialEq for LoxCallable {
+impl PartialEq for LoxFunction {
     fn eq(&self, _other: &Self) -> bool {
         false
     }
 }
 
-#[derive(Clone)]
-enum Executable {
-    Constructor(LoxClass),
-    Interpreted(Vec<Statement>, Vec<String>),
-    Native(fn(Vec<ObjectRef>) -> Result<ObjectRef, LoxError>),
-}
-
-impl LoxCallable {
+impl LoxFunction {
     pub fn to_string(&self) -> String {
         format!("<fn {}(arity={})>", self.name, self.arity)
+    }
+
+    fn wrap(self) -> FunctionRef {
+        Rc::new(RefCell::new(self))
     }
 
     pub fn native(
         name: String,
         arity: u8,
         global: SharedEnvironment,
-        f: fn(Vec<ObjectRef>) -> Result<ObjectRef, LoxError>,
-    ) -> LoxCallable {
-        LoxCallable {
+        f: fn(Vec<ObjectRef>, Expression) -> Result<ObjectRef, LoxError>,
+    ) -> FunctionRef {
+        LoxFunction {
             arity,
             name,
             closure: global,
             is_initializer: false,
             exec: Executable::Native(f),
         }
+        .wrap()
     }
 
     pub fn interpreted(
@@ -652,62 +971,68 @@ impl LoxCallable {
         params: Vec<String>,
         body: Vec<Statement>,
         closure: SharedEnvironment,
-    ) -> LoxCallable {
-        LoxCallable {
+    ) -> FunctionRef {
+        LoxFunction {
             name,
             arity: params.len() as u8,
             closure,
             is_initializer: false,
             exec: Executable::Interpreted(body, params),
         }
+        .wrap()
     }
 
-    fn try_from(object: ObjectRef) -> Result<LoxCallable, LoxError> {
-        fn err(object: ObjectRef) -> Result<LoxCallable, LoxError> {
+    fn try_from(object: ObjectRef, expression: &Expression) -> Result<FunctionRef, LoxError> {
+        fn err(expression: &Expression) -> Result<FunctionRef, LoxError> {
             Err(crate::lox::runtime_error(
-                Expression::Literal(object),
+                expression.clone(),
                 LoxErrorType::FunctionCallError,
                 &format!("exception trying to call non-function"),
             ))
         };
-        match &*object.borrow() {
-            // TODO: This is a total guess but I have a feeling we're heading somewhere like this
-            LoxObject::Function(f) => Ok(f.clone()),
-            LoxObject::Instance(_class, values) => match values.get("__call") {
-                Some(obj) => Self::try_from(obj.clone()),
-                None => err(object.clone()),
+        match &object.borrow().value {
+            ObjectType::Primitive(PrimitiveObject::Function(f)) => Ok(f.clone()),
+            ObjectType::Instance(Instance { fields, .. }) => match fields.get("__call") {
+                Some(obj) => Self::try_from(obj.clone(), expression),
+                None => err(expression),
             },
-            LoxObject::Class(class) => {
+            ObjectType::Primitive(PrimitiveObject::Class(class)) => {
                 let arity = if let Some(init) = class.find_method("init") {
-                    if let LoxObject::Function(c) = &*init.borrow() {
-                        c.arity
-                    } else {
-                        0
-                    }
+                    init.borrow().arity
                 } else {
                     0
                 };
-                let callable = LoxCallable {
+                let callable = LoxFunction {
                     arity,
                     exec: Executable::Constructor(class.clone()),
                     closure: Environment::new(),
                     is_initializer: true,
                     name: class.name.clone(),
                 };
-                Ok(callable)
-            },
-            _ => err(object.clone()),
+                Ok(callable.wrap())
+            }
+            _ => err(expression),
         }
     }
 
-    fn arity(&self) -> u8 {
-        self.arity
+    fn bind(&mut self, obj: ObjectRef) -> FunctionRef {
+        let env = Environment::extend(self.closure.clone());
+        env.borrow_mut().define("this".to_string(), obj);
+        LoxFunction {
+            closure: env,
+            is_initializer: self.is_initializer,
+            arity: self.arity,
+            exec: self.exec.clone(),
+            name: self.name.clone(),
+        }
+        .wrap()
     }
 
     fn call(
         &mut self,
         interpreter: &mut Interpreter,
         args: Vec<ObjectRef>,
+        expression: Expression,
     ) -> Result<ObjectRef, LoxError> {
         match self.exec.clone() {
             Executable::Interpreted(body, names) => {
@@ -722,20 +1047,21 @@ impl LoxCallable {
                     let name = x.to_owned();
                     let value = match args.get(i) {
                         Some(val) => val.clone(),
-                        None => LoxObject::Nil.wrap(),
+                        None => Object::nil(),
                     };
                     interpreter.environment.borrow_mut().define(name, value);
                 }
 
-                let mut result = Ok(LoxObject::Nil.wrap());
+                let mut result = Ok(Object::nil());
                 for statement in body {
                     result = match interpreter.interpret_statement(statement) {
                         Ok(obj) => Ok(obj),
                         Err(LoxError::ReturnPseudoError { value }) => {
                             if self.is_initializer {
-                                let this = self.closure.borrow().values.get("this").unwrap().clone();
+                                let this =
+                                    self.closure.borrow().values.get("this").unwrap().clone();
                                 interpreter.environment = old;
-                                return Ok(this)
+                                return Ok(this);
                             } else {
                                 interpreter.environment = old;
                                 return Ok(value.clone());
@@ -751,46 +1077,30 @@ impl LoxCallable {
                 if self.is_initializer {
                     let this = self.closure.borrow().values.get("this").unwrap().clone();
                     interpreter.environment = old;
-                    return Ok(this)
+                    return Ok(this);
                 }
 
                 interpreter.environment = old;
                 result
             }
-            Executable::Native(f) => f(args),
+            Executable::Native(f) => f(args, expression),
             Executable::Constructor(class) => {
                 let initializer = class.find_method("init");
-                let instance = LoxObject::Instance(class, HashMap::new()).wrap();
+                let instance = Object::instance(Instance {
+                    class,
+                    fields: HashMap::new(),
+                });
 
                 if let Some(init) = initializer {
-                    init.borrow_mut().bind(instance.clone()).call(interpreter, args)?;
+                    init.borrow_mut().bind(instance.clone()).borrow_mut().call(
+                        interpreter,
+                        args,
+                        expression,
+                    )?;
                 }
 
                 Ok(instance)
-            },
-        }
-    }
-}
-
-pub trait Bindable {
-    fn bind(&mut self, obj: ObjectRef) -> LoxCallable;
-}
-
-impl Bindable for LoxObject {
-    fn bind(&mut self, obj: ObjectRef) -> LoxCallable {
-        match self {
-            LoxObject::Function(callable) => {
-                let env = Environment::extend(callable.closure.clone());
-                env.borrow_mut().define("this".to_string(), obj);
-                LoxCallable {
-                    closure: env,
-                    is_initializer: callable.is_initializer,
-                    arity: callable.arity,
-                    exec: callable.exec.clone(),
-                    name: callable.name.clone(),
-                }
-            },
-            _ => todo!("unimplemented binding non-function to object")
+            }
         }
     }
 }

@@ -209,6 +209,9 @@ impl Resolver {
                 }
                 self.resolve_local(expression, keyword);
             }
+            Expression::Super { keyword, .. } => {
+                self.resolve_local(expression, keyword);
+            }
             Expression::Set { object, value, .. } => {
                 self.resolve_expression(value)?;
                 self.resolve_expression(object)?;
@@ -334,6 +337,8 @@ impl Resolver {
 
                 if let Some(superclass) = superclass {
                     self.resolve_expression(superclass)?;
+                    self.begin_scope();
+                    self.peek().unwrap().borrow_mut().insert("super".to_string(), true);
                 }
 
                 self.begin_scope();
@@ -352,6 +357,10 @@ impl Resolver {
                 }
 
                 self.end_scope();
+
+                if let Some(_superclass) = superclass {
+                    self.end_scope();
+                }
 
                 std::mem::swap(&mut enclosing, &mut self.current_class);
             }

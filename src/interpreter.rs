@@ -135,6 +135,7 @@ impl AstPrinter for Expression {
                 format!("{}({})", callee.to_string(), args.join(" "))
             }
             Expression::This { .. } => "this".to_string(),
+            Expression::Super { .. } => "super".to_string(),
             Expression::Set {
                 object,
                 name,
@@ -711,6 +712,7 @@ impl Interpreter {
                 }
             }
             Expression::This { keyword, .. } => self.lookup_variable(keyword, expression),
+            Expression::Super { keyword, .. } => self.lookup_variable(keyword, expression),
             Expression::Set {
                 object,
                 name,
@@ -877,7 +879,11 @@ impl Interpreter {
                 let superclass = if let Some(sc) = superclass {
                     // We don't check explicitly if sc is a class here because
                     // we already statically determined it was a class in the resolver
-                    Some(self.interpret_expression(sc)?)
+                    let sc = self.interpret_expression(sc)?;
+                    let enclosing = std::mem::replace(&mut self.environment, Environment::new());
+                    self.environment = Environment::extend(enclosing);
+                    self.environment.borrow_mut().define("super".to_string(), sc.clone());
+                    Some(sc)
                 } else {
                     None
                 };
@@ -899,10 +905,13 @@ impl Interpreter {
                     .collect();
                 let class = Object::class(LoxClass {
                     name: name.lexeme.clone(),
-                    superclass,
+                    superclass: superclass.clone(), // Cheap because it's just a ptr
                     methods,
                 });
 
+                if let Some(_superclass) = superclass {
+                    self.environment = take_parent(&self.environment);
+                }
                 // TODO um, the book uses `assign` here, but I deleted that and can't remember why
                 self.environment
                     .borrow_mut()

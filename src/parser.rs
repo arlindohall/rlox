@@ -71,6 +71,11 @@ pub enum Expression {
         id: ExpressionId,
         keyword: Token,
     },
+    Super {
+        id: ExpressionId,
+        keyword: Token,
+        method: Token,
+    },
     Set {
         object: Box<Expression>,
         name: Token,
@@ -630,6 +635,11 @@ impl Parser {
             )))
         } else if self.match_token(TokenType::This) {
             Ok(Expression::this(self.previous()))
+        } else if self.match_token(TokenType::Super) {
+            let keyword = self.previous();
+            self.consume(TokenType::Dot, "expect '.' after 'super'")?;
+            let method = self.consume(TokenType::Identifier, "expect method after 'super'")?;
+            Ok(Expression::super_class(keyword, method))
         } else if self.match_token(TokenType::Identifier) {
             Ok(Expression::variable(self.previous()))
         } else if self.match_token(TokenType::LeftParen) {
@@ -771,6 +781,14 @@ impl Expression {
         }
     }
 
+    fn super_class(keyword: Token, method: Token) -> Expression {
+        Expression::Super {
+            id: Uuid::new_v4().as_u128(),
+            keyword,
+            method
+        }
+    }
+
     fn get(object: Expression, name: Token) -> Expression {
         let object = Box::new(object);
         Expression::Get { object, name }
@@ -790,6 +808,7 @@ impl Expression {
         match self {
             Expression::Variable { id, .. }
             | Expression::Assignment { id, .. }
+            | Expression::Super { id, ..}
             | Expression::This { id, .. } => *id,
             _ => panic!(format!(
                 "Unrecoverable lox error to get expression id for expression {:?}",

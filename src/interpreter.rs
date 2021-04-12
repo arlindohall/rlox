@@ -51,15 +51,15 @@ pub struct Environment {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-struct LoxClass {
-    name: String,
-    methods: HashMap<String, FunctionRef>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
 pub struct Object {
     // This exists solely to keep the `value` field private
     value: ObjectType,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct LoxClass {
+    name: String,
+    methods: HashMap<String, FunctionRef>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

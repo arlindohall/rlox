@@ -12,4 +12,4 @@ if (number > 12.3 or number < 11) {
     print number;
 }
 
-11.method(); // Method calls on number literals
+print 11.to_string(); // Method calls on number literals

@@ -61,6 +61,7 @@ pub struct Object {
 pub struct LoxClass {
     name: String,
     methods: HashMap<String, FunctionRef>,
+    superclass: Option<ObjectRef>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -263,7 +264,7 @@ impl LoxClass {
     }
 
     pub fn new(name: String, methods: HashMap<String, FunctionRef>) -> LoxClass {
-        LoxClass { name, methods }
+        LoxClass { name, methods, superclass: None }
     }
 }
 
@@ -843,11 +844,19 @@ impl Interpreter {
             }
             Statement::None => Ok(Object::nil()),
             Statement::Class {
-                definition: ClassDefinition { name, methods, .. },
+                definition: ClassDefinition { name, methods, superclass },
             } => {
                 self.environment
                     .borrow_mut()
                     .define(name.lexeme.clone(), Object::nil());
+
+                let superclass = if let Some(sc) = superclass {
+                    // We don't check explicitly if sc is a class here because
+                    // we already statically determined it was a class in the resolver
+                    Some(self.interpret_expression(sc)?)
+                } else {
+                    None
+                };
 
                 let methods: HashMap<String, FunctionRef> = methods
                     .iter()
@@ -866,6 +875,7 @@ impl Interpreter {
                     .collect();
                 let class = Object::class(LoxClass {
                     name: name.lexeme.clone(),
+                    superclass,
                     methods,
                 });
 

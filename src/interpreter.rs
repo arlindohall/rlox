@@ -2,15 +2,11 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use crate::{
     builtins,
+    lox::{LoxError, LoxErrorType, LoxNumber},
+    parser::{
+        ClassDefinition, Expression, ExpressionId, FunctionDefinition, LoxLiteral, Statement,
+    },
     scanner::{Token, TokenType},
-};
-use crate::{
-    lox::LoxNumber,
-    parser::{Expression, LoxLiteral, Statement},
-};
-use crate::{
-    lox::{LoxError, LoxErrorType},
-    parser::{ExpressionId, FunctionDefinition},
 };
 
 /*******************************************************************************
@@ -241,7 +237,9 @@ impl AstPrinter for Statement {
                 prefix_whitespace,
             ),
             Statement::None => "\n".to_owned(),
-            Statement::Class { name, methods } => format!(
+            Statement::Class {
+                definition: ClassDefinition { name, methods, .. },
+            } => format!(
                 "{}class {} {{\n{}\n{}}}",
                 prefix_whitespace,
                 name.lexeme,
@@ -702,10 +700,11 @@ impl Interpreter {
 
                 if object.borrow().value.is_instance() {
                     let value = self.interpret_expression(*value)?;
-                    object.clone().borrow_mut().value.set(
-                        name.lexeme,
-                        value.clone(),
-                    );
+                    object
+                        .clone()
+                        .borrow_mut()
+                        .value
+                        .set(name.lexeme, value.clone());
                     // TODO, and this will probably be far-reaching, object fields need to be Rc references.
                     // this will appear as a bug where object state changes aren't persisted
                     Ok(value)
@@ -843,7 +842,9 @@ impl Interpreter {
                 Ok(Object::nil())
             }
             Statement::None => Ok(Object::nil()),
-            Statement::Class { name, methods } => {
+            Statement::Class {
+                definition: ClassDefinition { name, methods, .. },
+            } => {
                 self.environment
                     .borrow_mut()
                     .define(name.lexeme.clone(), Object::nil());

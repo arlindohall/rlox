@@ -64,9 +64,7 @@ static mut BUILTINS: Builtins = Builtins {
 pub fn boolean() -> LoxClass {
     unsafe {
         if let None = BUILTINS.boolean {
-            BUILTINS.boolean = Some(
-                LoxClass::new("Boolean".to_string(), builtin_methods())
-            );
+            BUILTINS.boolean = Some(LoxClass::new("Boolean".to_string(), builtin_methods()));
         }
         BUILTINS.boolean.clone().unwrap()
     }
@@ -75,9 +73,7 @@ pub fn boolean() -> LoxClass {
 pub fn number() -> LoxClass {
     unsafe {
         if let None = BUILTINS.number {
-            BUILTINS.number = Some(
-                LoxClass::new("Number".to_string(), builtin_methods())
-            );
+            BUILTINS.number = Some(LoxClass::new("Number".to_string(), builtin_methods()));
         }
         BUILTINS.number.clone().unwrap()
     }
@@ -88,9 +84,7 @@ pub fn string() -> LoxClass {
         if let None = BUILTINS.string {
             let mut shared = builtin_methods();
             shared.insert("to_number".to_string(), to_number());
-            BUILTINS.string = Some(
-                LoxClass::new("String".to_string(), shared)
-            );
+            BUILTINS.string = Some(LoxClass::new("String".to_string(), shared));
         }
         BUILTINS.string.clone().unwrap()
     }
@@ -99,9 +93,7 @@ pub fn string() -> LoxClass {
 pub fn function() -> LoxClass {
     unsafe {
         if let None = BUILTINS.function {
-            BUILTINS.function = Some(
-                LoxClass::new("Function".to_string(), builtin_methods())
-            );
+            BUILTINS.function = Some(LoxClass::new("Function".to_string(), builtin_methods()));
         }
         BUILTINS.function.clone().unwrap()
     }
@@ -110,9 +102,7 @@ pub fn function() -> LoxClass {
 pub fn meta_class() -> LoxClass {
     unsafe {
         if let None = BUILTINS.meta_class {
-            BUILTINS.meta_class = Some(
-                LoxClass::new("Class".to_string(), builtin_methods())
-            );
+            BUILTINS.meta_class = Some(LoxClass::new("Class".to_string(), builtin_methods()));
         }
         BUILTINS.meta_class.clone().unwrap()
     }
@@ -121,9 +111,7 @@ pub fn meta_class() -> LoxClass {
 pub fn nil() -> LoxClass {
     unsafe {
         if let None = BUILTINS.nil {
-            BUILTINS.nil = Some(
-                LoxClass::new("Nil".to_string(), builtin_methods())
-            );
+            BUILTINS.nil = Some(LoxClass::new("Nil".to_string(), builtin_methods()));
         }
         BUILTINS.nil.clone().unwrap()
     }
@@ -156,13 +144,22 @@ fn to_string_impl(
 }
 
 fn to_string() -> FunctionRef {
-    LoxFunction::native("to_string".to_string(), 0, Environment::new(), to_string_impl)
+    LoxFunction::native(
+        "to_string".to_string(),
+        0,
+        Environment::new(),
+        to_string_impl,
+    )
 }
 
 /*
  * String builtins
  */
-fn to_number_impl(_args: Vec<ObjectRef>, environment: SharedEnvironment, expression: Expression) -> Result<ObjectRef, LoxError> {
+fn to_number_impl(
+    _args: Vec<ObjectRef>,
+    environment: SharedEnvironment,
+    expression: Expression,
+) -> Result<ObjectRef, LoxError> {
     if let Some(this) = environment.borrow_mut().values.get("this") {
         let string = this.borrow().to_string();
         match string.parse() {
@@ -170,8 +167,8 @@ fn to_number_impl(_args: Vec<ObjectRef>, environment: SharedEnvironment, express
             Err(_) => Err(crate::lox::runtime_error(
                 expression,
                 LoxErrorType::TypeError,
-                &format!("cannot convert {} to number", string)
-            ))
+                &format!("cannot convert {} to number", string),
+            )),
         }
     } else {
         Err(crate::lox::runtime_error(
@@ -183,5 +180,10 @@ fn to_number_impl(_args: Vec<ObjectRef>, environment: SharedEnvironment, express
 }
 
 fn to_number() -> FunctionRef {
-    LoxFunction::native("to_number".to_string(), 0, Environment::new(), to_number_impl)
+    LoxFunction::native(
+        "to_number".to_string(),
+        0,
+        Environment::new(),
+        to_number_impl,
+    )
 }

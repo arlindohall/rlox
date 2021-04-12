@@ -85,6 +85,7 @@ pub enum Expression {
         name: Token,
     },
 }
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Statement {
     Print {
@@ -97,8 +98,7 @@ pub enum Statement {
         statements: Vec<Statement>,
     },
     Class {
-        name: Token,
-        methods: Vec<FunctionDefinition>,
+        definition: ClassDefinition,
     },
     Var {
         name: Token,
@@ -128,6 +128,13 @@ pub struct FunctionDefinition {
     pub name: Token,
     pub params: Vec<Token>,
     pub body: Vec<Statement>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ClassDefinition {
+    pub name: Token,
+    pub methods: Vec<FunctionDefinition>,
+    pub superclass: Option<Token>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -204,6 +211,13 @@ impl Parser {
 
     fn class_declaration(&mut self) -> Result<Statement, LoxError> {
         let name = self.consume(TokenType::Identifier, "expect class name")?;
+
+        let superclass = if self.match_token(TokenType::Less) {
+            Some(self.consume(TokenType::Identifier, "expect superclass name after '>'")?)
+        } else {
+            None
+        };
+
         self.consume(TokenType::LeftBrace, "expect '{' before class body")?;
 
         let mut methods = Vec::new();
@@ -212,7 +226,13 @@ impl Parser {
         }
 
         self.consume(TokenType::RightBrace, "expect '}' after class body")?;
-        Ok(Statement::Class { name, methods })
+        Ok(Statement::Class {
+            definition: ClassDefinition {
+                name,
+                methods,
+                superclass,
+            },
+        })
     }
 
     fn function(&mut self, kind: &str) -> Result<Statement, LoxError> {

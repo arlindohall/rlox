@@ -2,12 +2,7 @@
 
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
-use crate::{
-    interpreter::Interpreter,
-    lox::{LoxError, LoxErrorType},
-    parser::{Expression, FunctionDefinition, Statement},
-    scanner::Token,
-};
+use crate::{interpreter::Interpreter, lox::{LoxError, LoxErrorType}, parser::{ClassDefinition, Expression, FunctionDefinition, Statement}, scanner::Token};
 
 /*******************************************************************************
 ********************************************************************************
@@ -300,7 +295,7 @@ impl Resolver {
                 self.resolve_expression(value)?;
             }
             Statement::None => (),
-            Statement::Class { name, methods } => {
+            Statement::Class { definition: ClassDefinition { name, methods, .. }} => {
                 let mut enclosing = std::mem::replace(&mut self.current_class, ClassType::Class);
 
                 self.declare(name)?;

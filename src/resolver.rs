@@ -52,8 +52,10 @@ enum FunctionType {
     None,
 }
 
+#[derive(PartialEq)]
 enum ClassType {
     Class,
+    Subclass,
     None,
 }
 
@@ -210,6 +212,19 @@ impl Resolver {
                 self.resolve_local(expression, keyword);
             }
             Expression::Super { keyword, .. } => {
+                if self.current_class == ClassType::None {
+                    return Err(crate::lox::parse_error(
+                        keyword.clone(),
+                        LoxErrorType::ClassError,
+                        "cannot user 'super' outside of class"
+                    ));
+                } else if self.current_class == ClassType::Class {
+                    return Err(crate::lox::parse_error(
+                        keyword.clone(),
+                        LoxErrorType::ClassError,
+                        "cannot use 'super' without superclass"
+                    ));
+                }
                 self.resolve_local(expression, keyword);
             }
             Expression::Set { object, value, .. } => {
@@ -336,6 +351,7 @@ impl Resolver {
                 }
 
                 if let Some(superclass) = superclass {
+                    self.current_class = ClassType::Subclass;
                     self.resolve_expression(superclass)?;
                     self.begin_scope();
                     self.peek().unwrap().borrow_mut().insert("super".to_string(), true);

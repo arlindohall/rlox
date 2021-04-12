@@ -664,7 +664,7 @@ impl Interpreter {
                         ),
                     ))
                 } else {
-                    func.borrow_mut().call(self, arguments, expression)
+                    func.borrow().call(self, arguments, expression)
                 }
             }
             Expression::This { keyword, .. } => self.lookup_variable(keyword, expression),
@@ -1029,7 +1029,7 @@ impl LoxFunction {
     }
 
     fn call(
-        &mut self,
+        &self,
         interpreter: &mut Interpreter,
         args: Vec<ObjectRef>,
         expression: Expression,
@@ -1092,7 +1092,7 @@ impl LoxFunction {
                 });
 
                 if let Some(init) = initializer {
-                    init.borrow_mut().bind(instance.clone()).borrow_mut().call(
+                    init.borrow_mut().bind(instance.clone()).borrow().call(
                         interpreter,
                         args,
                         expression,

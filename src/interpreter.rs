@@ -483,7 +483,7 @@ impl Interpreter {
             self.environment.borrow().to_string(),
         ));
         match distance {
-            Some(dist) => self.get_at(*dist, name),
+            Some(dist) => self.get_at(*dist, &name.lexeme),
             None => Ok(self
                 .globals
                 .borrow()
@@ -494,16 +494,16 @@ impl Interpreter {
         }
     }
 
-    fn get_at(&self, distance: u16, name: Token) -> Result<ObjectRef, LoxError> {
+    fn get_at(&self, distance: u16, name: &str) -> Result<ObjectRef, LoxError> {
         crate::lox::trace(format!(
             ">>> Getting name={}, distance={}, env={:?}",
-            name.lexeme, &distance, self.environment,
+            name, &distance, self.environment,
         ));
         let value = self
             .ancestor(distance)
             .borrow()
             .values
-            .get(&name.lexeme)
+            .get(name)
             .unwrap()
             .clone();
         Ok(value)
@@ -712,7 +712,23 @@ impl Interpreter {
                 }
             }
             Expression::This { keyword, .. } => self.lookup_variable(keyword, expression),
-            Expression::Super { keyword, .. } => self.lookup_variable(keyword, expression),
+            Expression::Super { keyword, method, id } => {
+                let distance = self.locals.get(&id).unwrap();
+                let superclass = self.get_at(*distance, &keyword.lexeme)?;
+                let object = self.get_at(*distance - 1, "this")?;
+                let method = match &*superclass.borrow() {
+                    Object { value: ObjectType::Primitive(PrimitiveObject::Class(class)) } =>
+                        class.find_method(&method.lexeme),
+                    _ => None
+                };
+                match method {
+                    Some(method) => Ok(Object::function(method.borrow_mut().bind(object))),
+                    None => Err(crate::lox::runtime_error(
+                        expression,
+                        LoxErrorType::ClassError,
+                        "could not find method on super"))
+                }
+            },
             Expression::Set {
                 object,
                 name,

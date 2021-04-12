@@ -587,10 +587,7 @@ impl Parser {
             }
         }
 
-        let paren = self.consume(
-            TokenType::RightParen,
-            "expect ')' after function arguments",
-        )?;
+        let paren = self.consume(TokenType::RightParen, "expect ')' after function arguments")?;
 
         Ok(Expression::call(expr, paren, arguments))
     }

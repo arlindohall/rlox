@@ -260,23 +260,30 @@ impl AstPrinter for Statement {
 
 impl LoxClass {
     pub fn find_method(&self, name: &str) -> Option<FunctionRef> {
-        let super_method = self.superclass
+        let super_method = self
+            .superclass
             .clone()
-            .map(|sc| if let Object { value: ObjectType::Primitive(PrimitiveObject::Class(class))} = &*sc.borrow() {
-                Some(class.find_method(name).clone())
-            } else {
-                None
+            .map(|sc| {
+                if let Object {
+                    value: ObjectType::Primitive(PrimitiveObject::Class(class)),
+                } = &*sc.borrow()
+                {
+                    Some(class.find_method(name).clone())
+                } else {
+                    None
+                }
             })
             .flatten()
             .flatten();
-        self.methods
-            .get(name)
-            .map(|m| m.clone())
-            .or(super_method)
+        self.methods.get(name).map(|m| m.clone()).or(super_method)
     }
 
     pub fn new(name: String, methods: HashMap<String, FunctionRef>) -> LoxClass {
-        LoxClass { name, methods, superclass: None }
+        LoxClass {
+            name,
+            methods,
+            superclass: None,
+        }
     }
 }
 
@@ -856,7 +863,12 @@ impl Interpreter {
             }
             Statement::None => Ok(Object::nil()),
             Statement::Class {
-                definition: ClassDefinition { name, methods, superclass },
+                definition:
+                    ClassDefinition {
+                        name,
+                        methods,
+                        superclass,
+                    },
             } => {
                 self.environment
                     .borrow_mut()

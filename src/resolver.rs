@@ -2,7 +2,12 @@
 
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
-use crate::{interpreter::Interpreter, lox::{LoxError, LoxErrorType}, parser::{ClassDefinition, Expression, FunctionDefinition, Statement}, scanner::Token};
+use crate::{
+    interpreter::Interpreter,
+    lox::{LoxError, LoxErrorType},
+    parser::{ClassDefinition, Expression, FunctionDefinition, Statement},
+    scanner::Token,
+};
 
 /*******************************************************************************
 ********************************************************************************
@@ -295,24 +300,36 @@ impl Resolver {
                 self.resolve_expression(value)?;
             }
             Statement::None => (),
-            Statement::Class { definition: ClassDefinition { name, methods, superclass }} => {
+            Statement::Class {
+                definition:
+                    ClassDefinition {
+                        name,
+                        methods,
+                        superclass,
+                    },
+            } => {
                 let mut enclosing = std::mem::replace(&mut self.current_class, ClassType::Class);
 
                 self.declare(name)?;
                 self.define(name);
 
-                if let Some(Expression::Variable { name: super_name, .. }) = superclass {
+                if let Some(Expression::Variable {
+                    name: super_name, ..
+                }) = superclass
+                {
                     if name.lexeme == super_name.lexeme {
                         return Err(crate::lox::parse_error(
                             super_name.clone(),
                             LoxErrorType::ClassError,
-                            "class cannot inherit from itself"))
+                            "class cannot inherit from itself",
+                        ));
                     }
                 } else if let Some(_expression) = superclass {
                     return Err(crate::lox::parse_error(
                         name.clone(),
                         LoxErrorType::ClassError,
-                        &format!("cannot inherit from non-class")))
+                        &format!("cannot inherit from non-class"),
+                    ));
                 }
 
                 if let Some(superclass) = superclass {

@@ -405,7 +405,7 @@ impl Object {
             if let Object { value: ObjectType::Data(Data::List(list)) } = self {
                 return list
                     .get(*n as usize)
-                    .map(|obj_ref| obj_ref.clone());
+                    .map(|obj_ref| obj_ref.clone())
             }
         }
         None

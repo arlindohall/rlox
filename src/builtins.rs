@@ -77,8 +77,8 @@ fn list_pop_impl(_args: Vec<ObjectRef>, environment: SharedEnvironment, _express
 fn list_get_impl(args: Vec<ObjectRef>, environment: SharedEnvironment, _expression: Expression) -> Result<ObjectRef, LoxError> {
     let value = args[0].clone();
     let this = environment.borrow().values.get("this").unwrap().clone();
-    this.borrow().get(value);
-    Ok(this.clone())
+    let result = this.borrow().get(value);
+    Ok(result.or(Some(Object::nil())).unwrap())
 }
 
 fn list_push() -> FunctionRef {

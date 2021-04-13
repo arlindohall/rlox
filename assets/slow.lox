@@ -1,0 +1,26 @@
+// This program is intended to be as slow as possible to really show
+// the speed up of the bytecode interpreter
+
+var sum = 0;
+var nums = list();
+var iterations = 10;
+
+class Example {
+    act(n) {
+        return 5 + n;
+    }
+}
+
+for (var i = 0; i < iterations; i = i + 1) {
+    print "Creating the " + i.to_string() + "th example";
+    var ex = Example();
+    nums.push(ex);
+}
+
+// TODO: This exposes a bug where somehow fields are lost on methods
+// when the go out of scope?
+for (var i = 0; i < iterations; i = i + 1) {
+    print "Running the " + i.to_string() + "th example";
+    var me = nums.get(i);
+    me.act(1);
+}

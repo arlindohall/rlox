@@ -68,6 +68,12 @@ pub struct LoxClass {
 enum ObjectType {
     Primitive(PrimitiveObject),
     Instance(Instance),
+    Data(Data),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+enum Data {
+    List(Vec<ObjectRef>),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -301,6 +307,14 @@ impl PrimitiveObject {
     }
 }
 
+impl Data {
+    fn get_class(&self) -> LoxClass {
+        match self {
+            Data::List(_) => builtins::list_class(),
+        }
+    }
+}
+
 impl std::convert::From<LoxLiteral> for PrimitiveObject {
     fn from(literal: LoxLiteral) -> Self {
         match literal {
@@ -327,6 +341,12 @@ impl Object {
 
     pub fn to_string(&self) -> String {
         self.value.to_string()
+    }
+
+    pub fn list() -> ObjectRef {
+        Object {
+            value: ObjectType::Data(Data::List(Vec::new()))
+        }.wrap()
     }
 
     pub fn nil() -> ObjectRef {
@@ -362,6 +382,42 @@ impl Object {
             value: ObjectType::Primitive(PrimitiveObject::Function(f)),
         }
         .wrap()
+    }
+
+    pub fn push(&mut self, value: ObjectRef) {
+        // TODO: This is technically a bug as calling as_list anywhere else will result
+        // in a new list each time, but for now we only call it where we know it's a list
+        if let Object { value: ObjectType::Data(Data::List(list)) } = self {
+            list.push(value)
+        }
+    }
+
+    pub fn pop(&mut self) -> Option<ObjectRef> {
+        if let Object { value: ObjectType::Data(Data::List(list)) } = self {
+            list.pop()
+        } else {
+            None
+        }
+    }
+
+    pub fn get(&self, index: ObjectRef) -> Option<ObjectRef> {
+        if let Object { value: ObjectType::Primitive(PrimitiveObject::Number(n)) } = &*index.borrow() {
+            if let Object { value: ObjectType::Data(Data::List(list)) } = self {
+                return list
+                    .get(*n as usize)
+                    .map(|obj_ref| obj_ref.clone())
+            }
+        }
+        None
+    }
+
+    pub fn as_number(&self) -> f64 {
+        if let Object { value: ObjectType::Primitive(PrimitiveObject::Number(n))} = self {
+            *n
+        } else {
+            // TODO: same as above as_list, see impl for push/pop/get in builtins
+            0f64
+        }
     }
 
     // Classes and instances are private to the interpreter
@@ -415,6 +471,14 @@ impl ObjectType {
             },
             // TODO: maybe actually print objects
             Self::Instance(object) => format!("<{}>", object.class.name),
+            Self::Data(Data::List(list)) => format!(
+                "[{}]",
+                list
+                    .iter()
+                    .map(|obj| obj.borrow().to_string())
+                    .collect::<Vec<String>>()
+                    .join(", ")
+            )
         }
     }
 
@@ -422,6 +486,7 @@ impl ObjectType {
         match self {
             Self::Primitive(primitive) => primitive.get_class().name,
             Self::Instance(Instance { class, .. }) => class.name.to_string(),
+            Self::Data(Data::List(_)) => "List".to_string(),
         }
     }
 
@@ -448,6 +513,11 @@ impl ObjectType {
             }
         } else if let Self::Primitive(primitive) = self {
             let class = primitive.get_class();
+            if let Some(method) = class.find_method(name) {
+                return Ok(Object::function(method.clone().borrow_mut().bind(this)));
+            }
+        } else if let Self::Data(data) = self {
+            let class = data.get_class();
             if let Some(method) = class.find_method(name) {
                 return Ok(Object::function(method.clone().borrow_mut().bind(this)));
             }

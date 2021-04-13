@@ -1,7 +1,5 @@
 use std::{
-    cell::RefCell,
     collections::HashMap,
-    rc::Rc,
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -31,7 +29,7 @@ fn clock_impl(
     }
 }
 
-pub fn clock(global: Rc<RefCell<Environment>>) -> ObjectRef {
+pub fn clock(global: SharedEnvironment) -> ObjectRef {
     Object::function(LoxFunction::native(
         "clock".to_string(),
         0,
@@ -41,7 +39,75 @@ pub fn clock(global: Rc<RefCell<Environment>>) -> ObjectRef {
 }
 
 /*
- * Built-in classes.
+List type
+ */
+
+static mut LIST :Option<LoxClass> = None;
+pub fn list_impl(
+    _args: Vec<ObjectRef>,
+    _environment: SharedEnvironment,
+    _expression: Expression,
+) -> Result<ObjectRef, LoxError> {
+    Ok(Object::list())
+}
+
+pub fn list(global: SharedEnvironment) -> ObjectRef {
+    Object::function(LoxFunction::native(
+        "list".to_string(),
+        0,
+        global,
+        list_impl,
+    ))
+}
+
+// TODO: error handling for the three impls below
+fn list_push_impl(args: Vec<ObjectRef>, environment: SharedEnvironment, _expression: Expression) -> Result<ObjectRef, LoxError> {
+    let value = args[0].clone();
+    let this = environment.borrow().values.get("this").unwrap().clone();
+    this.borrow_mut().push(value);
+    Ok(this.clone())
+}
+
+fn list_pop_impl(_args: Vec<ObjectRef>, environment: SharedEnvironment, _expression: Expression) -> Result<ObjectRef, LoxError> {
+    let this = environment.borrow().values.get("this").unwrap().clone();
+    let value = this.borrow_mut().pop();
+    Ok(value.or(Some(Object::nil())).unwrap())
+}
+
+fn list_get_impl(args: Vec<ObjectRef>, environment: SharedEnvironment, _expression: Expression) -> Result<ObjectRef, LoxError> {
+    let value = args[0].clone();
+    let this = environment.borrow().values.get("this").unwrap().clone();
+    this.borrow().get(value);
+    Ok(this.clone())
+}
+
+fn list_push() -> FunctionRef {
+    LoxFunction::native("push".to_string(), 1, Environment::new(), list_push_impl)
+}
+
+fn list_pop() -> FunctionRef {
+    LoxFunction::native("pop".to_string(), 0, Environment::new(), list_pop_impl)
+}
+
+fn list_get() -> FunctionRef {
+    LoxFunction::native("get".to_string(), 1, Environment::new(), list_get_impl)
+}
+
+pub fn list_class() -> LoxClass {
+    unsafe {
+        if let None = LIST {
+            let mut methods = builtin_methods();
+            methods.insert("push".to_string(), list_push());
+            methods.insert("pop".to_string(), list_pop());
+            methods.insert("get".to_string(), list_get());
+            LIST = Some(LoxClass::new("List".to_string(),methods));
+        }
+        LIST.clone().unwrap()
+    }
+}
+
+/*
+Built-in classes.
  */
 struct Builtins {
     boolean: Option<LoxClass>,
@@ -118,7 +184,7 @@ pub fn nil() -> LoxClass {
 }
 
 /*
- * Shared built-in methods.
+Shared built-in methods.
  */
 fn builtin_methods() -> HashMap<String, FunctionRef> {
     let mut methods = HashMap::new();
@@ -153,7 +219,7 @@ fn to_string() -> FunctionRef {
 }
 
 /*
- * String builtins
+String builtins
  */
 fn to_number_impl(
     _args: Vec<ObjectRef>,

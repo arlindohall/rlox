@@ -1,4 +1,4 @@
-use crate::{interpreter::SharedEnvironment, scanner::{Scanner, Token, TokenType}};
+use crate::{builtins::list, interpreter::SharedEnvironment, scanner::{Scanner, Token, TokenType}};
 use crate::{
     builtins::clock,
     interpreter::ObjectRef,
@@ -224,9 +224,12 @@ impl Lox {
 
         let clock = clock(self.environment.clone());
         self.environment
-            .clone()
             .borrow_mut()
             .define("clock".to_owned(), clock);
+        let list = list(self.environment.clone());
+        self.environment
+            .borrow_mut()
+            .define("list".to_owned(), list);
 
         let interpreter = Interpreter::with_env(self.environment.clone());
         let mut resolver = Resolver::new(interpreter);

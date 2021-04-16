@@ -785,7 +785,7 @@ impl Expression {
         Expression::Super {
             id: Uuid::new_v4().as_u128(),
             keyword,
-            method
+            method,
         }
     }
 
@@ -808,7 +808,7 @@ impl Expression {
         match self {
             Expression::Variable { id, .. }
             | Expression::Assignment { id, .. }
-            | Expression::Super { id, ..}
+            | Expression::Super { id, .. }
             | Expression::This { id, .. } => *id,
             _ => panic!(format!(
                 "Unrecoverable lox error to get expression id for expression {:?}",

@@ -111,14 +111,18 @@ impl Resolver {
         // it's fine for now
         // let mut i = self.scopes.len() as u16;
         let mut i = 0;
-        crate::lox::trace(format!(
-            ">>> Resolving local variable expr={:?}, scopes={:?}",
-            name.lexeme, self.scopes,
-        ));
+        if crate::lox::TRACE {
+            println!(
+                ">>> Resolving local variable expr={:?}, scopes={:?}",
+                name.lexeme, self.scopes,
+            )
+        };
         for scope in self.scopes.iter().rev() {
             i += 1;
             if scope.borrow().contains_key(&name.lexeme) {
-                crate::lox::trace(format!(">>> Found at {}", i));
+                if crate::lox::TRACE {
+                    println!(">>> Found at {}", i)
+                };
                 self.interpreter.resolve(expr.clone(), i);
                 return;
             }
@@ -216,13 +220,13 @@ impl Resolver {
                     return Err(crate::lox::parse_error(
                         keyword.clone(),
                         LoxErrorType::ClassError,
-                        "cannot user 'super' outside of class"
+                        "cannot user 'super' outside of class",
                     ));
                 } else if self.current_class == ClassType::Class {
                     return Err(crate::lox::parse_error(
                         keyword.clone(),
                         LoxErrorType::ClassError,
-                        "cannot use 'super' without superclass"
+                        "cannot use 'super' without superclass",
                     ));
                 }
                 self.resolve_local(expression, keyword);
@@ -261,10 +265,9 @@ impl Resolver {
                 self.resolve_expression(expression)?;
             }
             Statement::Block { statements, .. } => {
-                crate::lox::trace(format!(
-                    ">>> Resolving block statement stmt={:?}",
-                    statement
-                ));
+                if crate::lox::TRACE {
+                    println!(">>> Resolving block statement stmt={:?}", statement)
+                };
                 self.begin_scope();
                 self.resolve_statements(&statements)?;
                 self.end_scope();
@@ -293,10 +296,9 @@ impl Resolver {
                 self.resolve_function(&definition, FunctionType::Function)?;
             }
             Statement::While { condition, body } => {
-                crate::lox::trace(format!(
-                    ">>> Resolving while statement stmt={:?}",
-                    statement
-                ));
+                if crate::lox::TRACE {
+                    println!(">>> Resolving while statement stmt={:?}", statement)
+                };
                 self.resolve_expression(condition)?;
                 self.resolve_statement(&body)?;
             }
@@ -354,7 +356,10 @@ impl Resolver {
                     self.current_class = ClassType::Subclass;
                     self.resolve_expression(superclass)?;
                     self.begin_scope();
-                    self.peek().unwrap().borrow_mut().insert("super".to_string(), true);
+                    self.peek()
+                        .unwrap()
+                        .borrow_mut()
+                        .insert("super".to_string(), true);
                 }
 
                 self.begin_scope();

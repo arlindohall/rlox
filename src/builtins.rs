@@ -42,7 +42,7 @@ pub fn clock(global: SharedEnvironment) -> ObjectRef {
 List type
  */
 
-static mut LIST :Option<LoxClass> = None;
+static mut LIST: Option<LoxClass> = None;
 pub fn list_impl(
     _args: Vec<ObjectRef>,
     _environment: SharedEnvironment,
@@ -61,20 +61,32 @@ pub fn list(global: SharedEnvironment) -> ObjectRef {
 }
 
 // TODO: error handling for the three impls below
-fn list_push_impl(args: Vec<ObjectRef>, environment: SharedEnvironment, _expression: Expression) -> Result<ObjectRef, LoxError> {
+fn list_push_impl(
+    args: Vec<ObjectRef>,
+    environment: SharedEnvironment,
+    _expression: Expression,
+) -> Result<ObjectRef, LoxError> {
     let value = args[0].clone();
     let this = environment.borrow().values.get("this").unwrap().clone();
     this.borrow_mut().push(value);
     Ok(this.clone())
 }
 
-fn list_pop_impl(_args: Vec<ObjectRef>, environment: SharedEnvironment, _expression: Expression) -> Result<ObjectRef, LoxError> {
+fn list_pop_impl(
+    _args: Vec<ObjectRef>,
+    environment: SharedEnvironment,
+    _expression: Expression,
+) -> Result<ObjectRef, LoxError> {
     let this = environment.borrow().values.get("this").unwrap().clone();
     let value = this.borrow_mut().pop();
     Ok(value.or(Some(Object::nil())).unwrap())
 }
 
-fn list_get_impl(args: Vec<ObjectRef>, environment: SharedEnvironment, _expression: Expression) -> Result<ObjectRef, LoxError> {
+fn list_get_impl(
+    args: Vec<ObjectRef>,
+    environment: SharedEnvironment,
+    _expression: Expression,
+) -> Result<ObjectRef, LoxError> {
     let value = args[0].clone();
     let this = environment.borrow().values.get("this").unwrap().clone();
     let result = this.borrow().get(value);
@@ -100,7 +112,7 @@ pub fn list_class() -> LoxClass {
             methods.insert("push".to_string(), list_push());
             methods.insert("pop".to_string(), list_pop());
             methods.insert("get".to_string(), list_get());
-            LIST = Some(LoxClass::new("List".to_string(),methods));
+            LIST = Some(LoxClass::new("List".to_string(), methods));
         }
         LIST.clone().unwrap()
     }

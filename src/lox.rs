@@ -1,8 +1,12 @@
-use crate::{builtins::list, interpreter::SharedEnvironment, scanner::{Scanner, Token, TokenType}};
 use crate::{
     builtins::clock,
     interpreter::ObjectRef,
     parser::{Expression, Parser},
+};
+use crate::{
+    builtins::list,
+    interpreter::SharedEnvironment,
+    scanner::{Scanner, Token, TokenType},
 };
 use crate::{
     interpreter::{AstPrinter, Environment, Interpreter},
@@ -16,7 +20,6 @@ pub type LoxNumber = f64; // Numbers are floats, can be improved
 type ReservedWord = (&'static str, TokenType);
 
 pub static TRACE: bool = false;
-pub static LOG: bool = true;
 
 static mut HAD_ERROR: bool = false;
 static mut HAD_RUNTIME_ERROR: bool = false;
@@ -39,18 +42,6 @@ static RESERVED_WORDS: &[ReservedWord] = &[
     ("var", TokenType::Var),
     ("while", TokenType::While),
 ];
-
-pub fn trace(message: String) {
-    if TRACE {
-        println!("{}", message);
-    }
-}
-
-pub fn _log(message: String) {
-    if LOG {
-        println!("{}", message);
-    }
-}
 
 /*
  * Gross gross gross gross gross gross gross
@@ -207,7 +198,7 @@ pub fn reserved(name: &str) -> Option<TokenType> {
 }
 
 pub struct Lox {
-    environment: SharedEnvironment
+    environment: SharedEnvironment,
 }
 
 impl Lox {

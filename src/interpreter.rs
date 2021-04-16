@@ -345,8 +345,9 @@ impl Object {
 
     pub fn list() -> ObjectRef {
         Object {
-            value: ObjectType::Data(Data::List(Vec::new()))
-        }.wrap()
+            value: ObjectType::Data(Data::List(Vec::new())),
+        }
+        .wrap()
     }
 
     pub fn nil() -> ObjectRef {
@@ -387,13 +388,19 @@ impl Object {
     pub fn push(&mut self, value: ObjectRef) {
         // TODO: This is technically a bug as calling as_list anywhere else will result
         // in a new list each time, but for now we only call it where we know it's a list
-        if let Object { value: ObjectType::Data(Data::List(list)) } = self {
+        if let Object {
+            value: ObjectType::Data(Data::List(list)),
+        } = self
+        {
             list.push(value)
         }
     }
 
     pub fn pop(&mut self) -> Option<ObjectRef> {
-        if let Object { value: ObjectType::Data(Data::List(list)) } = self {
+        if let Object {
+            value: ObjectType::Data(Data::List(list)),
+        } = self
+        {
             list.pop()
         } else {
             None
@@ -401,18 +408,25 @@ impl Object {
     }
 
     pub fn get(&self, index: ObjectRef) -> Option<ObjectRef> {
-        if let Object { value: ObjectType::Primitive(PrimitiveObject::Number(n)) } = &*index.borrow() {
-            if let Object { value: ObjectType::Data(Data::List(list)) } = self {
-                return list
-                    .get(*n as usize)
-                    .map(|obj_ref| obj_ref.clone())
+        if let Object {
+            value: ObjectType::Primitive(PrimitiveObject::Number(n)),
+        } = &*index.borrow()
+        {
+            if let Object {
+                value: ObjectType::Data(Data::List(list)),
+            } = self
+            {
+                return list.get(*n as usize).map(|obj_ref| obj_ref.clone());
             }
         }
         None
     }
 
     pub fn as_number(&self) -> f64 {
-        if let Object { value: ObjectType::Primitive(PrimitiveObject::Number(n))} = self {
+        if let Object {
+            value: ObjectType::Primitive(PrimitiveObject::Number(n)),
+        } = self
+        {
             *n
         } else {
             // TODO: same as above as_list, see impl for push/pop/get in builtins
@@ -473,12 +487,11 @@ impl ObjectType {
             Self::Instance(object) => format!("<{}>", object.class.name),
             Self::Data(Data::List(list)) => format!(
                 "[{}]",
-                list
-                    .iter()
+                list.iter()
                     .map(|obj| obj.borrow().to_string())
                     .collect::<Vec<String>>()
                     .join(", ")
-            )
+            ),
         }
     }
 
@@ -540,18 +553,22 @@ impl Interpreter {
     }
 
     pub fn resolve(&mut self, expression: Expression, i: u16) {
-        crate::lox::trace(format!(">>> Resolving level={}, expr={:?}", i, expression));
+        if crate::lox::TRACE {
+            println!(">>> Resolving level={}, expr={:?}", i, expression)
+        };
         self.locals.insert(expression.get_id(), i);
     }
 
     fn lookup_variable(&self, name: Token, expression: Expression) -> Result<ObjectRef, LoxError> {
         let distance = self.locals.get(&expression.get_id());
-        crate::lox::trace(format!(
-            ">>> Looking for variable name={}, dist={:?}, env={}",
-            name.lexeme,
-            &distance,
-            self.environment.borrow().to_string(),
-        ));
+        if crate::lox::TRACE {
+            println!(
+                ">>> Looking for variable name={}, dist={:?}, env={}",
+                name.lexeme,
+                &distance,
+                self.environment.borrow().to_string(),
+            )
+        };
         match distance {
             Some(dist) => self.get_at(*dist, &name.lexeme),
             None => Ok(self
@@ -565,10 +582,12 @@ impl Interpreter {
     }
 
     fn get_at(&self, distance: u16, name: &str) -> Result<ObjectRef, LoxError> {
-        crate::lox::trace(format!(
-            ">>> Getting name={}, distance={}, env={:?}",
-            name, &distance, self.environment,
-        ));
+        if crate::lox::TRACE {
+            println!(
+                ">>> Getting name={}, distance={}, env={:?}",
+                name, &distance, self.environment,
+            )
+        };
         let value = self
             .ancestor(distance)
             .borrow()
@@ -580,13 +599,15 @@ impl Interpreter {
     }
 
     fn assign_at(&self, distance: u16, name: Token, value: ObjectRef) -> Result<(), LoxError> {
-        crate::lox::trace(format!(
-            ">>> Assigning name={}, distance={}, value={:?}, env={}",
-            name.lexeme,
-            &distance,
-            value,
-            self.environment.borrow().to_string(),
-        ));
+        if crate::lox::TRACE {
+            println!(
+                ">>> Assigning name={}, distance={}, value={:?}, env={}",
+                name.lexeme,
+                &distance,
+                value,
+                self.environment.borrow().to_string(),
+            )
+        };
         Ok(self
             .ancestor(distance)
             .borrow_mut()
@@ -596,12 +617,16 @@ impl Interpreter {
     fn ancestor(&self, distance: u16) -> SharedEnvironment {
         let mut distance = distance.clone();
         let mut env = self.environment.clone();
-        crate::lox::trace(format!(
-            ">>> Getting ancestor at distance={}, env={:?}",
-            distance, env,
-        ));
+        if crate::lox::TRACE {
+            println!(
+                ">>> Getting ancestor at distance={}, env={:?}",
+                distance, env,
+            )
+        };
         while distance > 1 {
-            crate::lox::trace(format!("  ... pulling from environment {}", distance));
+            if crate::lox::TRACE {
+                println!("  ... pulling from environment {}", distance)
+            };
             env = take_parent(&env);
             distance -= 1;
         }
@@ -726,20 +751,24 @@ impl Interpreter {
             Expression::Variable { name, .. } => self.lookup_variable(name, expression),
             Expression::Assignment { name, value, .. } => {
                 // TODO: This clone could be super expensive, if the whole program is one assignment
-                crate::lox::trace(format!(
-                    ">>> Modifying environment={}",
-                    self.environment.borrow().to_string(),
-                ));
+                if crate::lox::TRACE {
+                    println!(
+                        ">>> Modifying environment={}",
+                        self.environment.borrow().to_string(),
+                    )
+                };
                 let value = self.interpret_expression(*value.clone())?;
                 let distance = self.locals.get(&expression.get_id());
                 match distance {
                     Some(dist) => self.assign_at(*dist, name, value.clone()),
                     None => Ok(self.globals.borrow_mut().define(name.lexeme, value.clone())),
                 }?;
-                crate::lox::trace(format!(
-                    ">>> Done modifying environment={}",
-                    self.environment.borrow().to_string()
-                ));
+                if crate::lox::TRACE {
+                    println!(
+                        ">>> Done modifying environment={}",
+                        self.environment.borrow().to_string()
+                    )
+                };
 
                 Ok(value)
             }
@@ -755,10 +784,12 @@ impl Interpreter {
                 }
             }
             Expression::Call { callee, args, .. } => {
-                crate::lox::trace(format!(
-                    ">>> Calling function with environment={}",
-                    self.environment.borrow().to_string()
-                ));
+                if crate::lox::TRACE {
+                    println!(
+                        ">>> Calling function with environment={}",
+                        self.environment.borrow().to_string()
+                    )
+                };
                 let callee_obj = self.interpret_expression(*callee.clone())?;
 
                 let mut arguments = Vec::new();
@@ -782,23 +813,29 @@ impl Interpreter {
                 }
             }
             Expression::This { keyword, .. } => self.lookup_variable(keyword, expression),
-            Expression::Super { keyword, method, id } => {
+            Expression::Super {
+                keyword,
+                method,
+                id,
+            } => {
                 let distance = self.locals.get(&id).unwrap();
                 let superclass = self.get_at(*distance, &keyword.lexeme)?;
                 let object = self.get_at(*distance - 1, "this")?;
                 let method = match &*superclass.borrow() {
-                    Object { value: ObjectType::Primitive(PrimitiveObject::Class(class)) } =>
-                        class.find_method(&method.lexeme),
-                    _ => None
+                    Object {
+                        value: ObjectType::Primitive(PrimitiveObject::Class(class)),
+                    } => class.find_method(&method.lexeme),
+                    _ => None,
                 };
                 match method {
                     Some(method) => Ok(Object::function(method.borrow_mut().bind(object))),
                     None => Err(crate::lox::runtime_error(
                         expression,
                         LoxErrorType::ClassError,
-                        "could not find method on super"))
+                        "could not find method on super",
+                    )),
                 }
-            },
+            }
             Expression::Set {
                 object,
                 name,
@@ -853,11 +890,13 @@ impl Interpreter {
     }
 
     pub fn interpret_statement(&mut self, statement: Statement) -> Result<ObjectRef, LoxError> {
-        crate::lox::trace(format!(
-            ">>> Interpreting at statement={} env={}",
-            statement.to_string(),
-            self.environment.borrow().to_string()
-        ));
+        if crate::lox::TRACE {
+            println!(
+                ">>> Interpreting at statement={} env={}",
+                statement.to_string(),
+                self.environment.borrow().to_string()
+            )
+        };
         match statement.clone() {
             Statement::Print { expression } => {
                 let obj = self.interpret_expression(expression)?;
@@ -870,18 +909,22 @@ impl Interpreter {
                     Some(expr) => self.interpret_expression(expr),
                     None => Ok(Object::nil()),
                 }?;
-                crate::lox::trace(format!(
-                    ">>> Defining new variable={} value={}",
-                    name.lexeme,
-                    value.borrow().value.to_string()
-                ));
+                if crate::lox::TRACE {
+                    println!(
+                        ">>> Defining new variable={} value={}",
+                        name.lexeme,
+                        value.borrow().value.to_string()
+                    )
+                };
                 self.environment
                     .borrow_mut()
                     .define(name.lexeme, value.clone());
-                crate::lox::trace(format!(
-                    ">>> After definition env={}",
-                    self.environment.borrow().to_string()
-                ));
+                if crate::lox::TRACE {
+                    println!(
+                        ">>> After definition env={}",
+                        self.environment.borrow().to_string()
+                    )
+                };
                 Ok(value)
             }
             Statement::Block { statements } => {
@@ -968,7 +1011,9 @@ impl Interpreter {
                     let sc = self.interpret_expression(sc)?;
                     let enclosing = std::mem::replace(&mut self.environment, Environment::new());
                     self.environment = Environment::extend(enclosing);
-                    self.environment.borrow_mut().define("super".to_string(), sc.clone());
+                    self.environment
+                        .borrow_mut()
+                        .define("super".to_string(), sc.clone());
                     Some(sc)
                 } else {
                     None
@@ -1062,16 +1107,17 @@ impl Environment {
     }
 
     pub fn define(&mut self, name: String, value: ObjectRef) {
-        crate::lox::trace(format!(
-            ">>> Inserted into environment name={} val={}",
-            name,
-            value.borrow().value.to_string()
-        ));
+        if crate::lox::TRACE {
+            println!(
+                ">>> Inserted into environment name={} val={}",
+                name,
+                value.borrow().value.to_string()
+            )
+        };
         self.values.insert(name, value);
-        crate::lox::trace(format!(
-            ">>> Raw environment contents map={:?}",
-            self.values
-        ));
+        if crate::lox::TRACE {
+            println!(">>> Raw environment contents map={:?}", self.values)
+        };
     }
 
     fn to_string(&self) -> String {

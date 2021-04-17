@@ -1,4 +1,4 @@
-use std::{cell::RefCell, collections::HashMap, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, hash::Hash, rc::Rc};
 
 use crate::{builtins, lox::{LoxError, LoxErrorType, LoxNumber}, parser::{ClassDefinition, Expression, ExpressionId, FunctionBodyRef, FunctionDefinition, LoxLiteral, Statement}, scanner::{StringRef, Token, TokenType}};
 
@@ -38,49 +38,49 @@ pub type ClassRef = Rc<LoxClass>;
 pub type FunctionRef = Rc<RefCell<LoxFunction>>;
 
 // TODO maybe don't have values exposed, just have a getter, no setter??
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct Environment {
-    pub values: HashMap<String, ObjectRef>,
+    pub values: HashMap<HashString, ObjectRef>,
     enclosing: Option<SharedEnvironment>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct Object {
     // This exists solely to keep the `value` field private
     value: ObjectType,
 }
 
 // Maybe revisit this, but it's only public so builtins can implement it
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct LoxClass {
-    name: StringRef,
-    methods: HashMap<String, FunctionRef>,
+    name: HashString,
+    methods: HashMap<HashString, FunctionRef>,
     superclass: Option<ObjectRef>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 enum ObjectType {
     Primitive(PrimitiveObject),
     Instance(Instance),
     Data(Data),
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 enum Data {
     List(Vec<ObjectRef>),
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 struct Instance {
     class: ClassRef,
-    fields: HashMap<String, ObjectRef>,
+    fields: HashMap<HashString, ObjectRef>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 enum PrimitiveObject {
     Boolean(bool),
     Number(LoxNumber),
-    String(StringRef),
+    String(HashString),
     Function(FunctionRef),
     Class(ClassRef),
     Nil,
@@ -92,13 +92,25 @@ pub struct LoxFunction {
     closure: SharedEnvironment,
     exec: Executable,
     is_initializer: bool,
-    name: StringRef,
+    name: HashString,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct HashString {
+    value: StringRef,
+}
+
+impl std::hash::Hash for HashString {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        let HashString { value } = self;
+        value.hash(state)
+    }
 }
 
 #[derive(Clone)]
 enum Executable {
     Constructor(ClassRef),
-    Interpreted(FunctionBodyRef, Vec<StringRef>),
+    Interpreted(FunctionBodyRef, Vec<HashString>),
     Native(fn(Vec<ObjectRef>, SharedEnvironment, &Expression) -> Result<ObjectRef, LoxError>),
 }
 
@@ -261,7 +273,7 @@ impl AstPrinter for Statement {
 }
 
 impl LoxClass {
-    pub fn find_method(&self, name: &str) -> Option<FunctionRef> {
+    pub fn find_method(&self, name: HashString) -> Option<FunctionRef> {
         let super_method = self
             .superclass
             .clone()
@@ -280,12 +292,12 @@ impl LoxClass {
         self.methods.get(name).map(|m| m.clone()).or(super_method)
     }
 
-    pub fn new(name: &str, methods: HashMap<String, FunctionRef>) -> LoxClass {
-        LoxClass {
+    pub fn new(name: &str, methods: HashMap<HashString, FunctionRef>) -> ClassRef {
+        Rc::new(LoxClass {
             methods,
-            name: Rc::new(String::from(name)),
+            name: HashString { value: Rc::new(String::from(name)) },
             superclass: None,
-        }
+        })
     }
 }
 
@@ -314,7 +326,10 @@ impl std::convert::From<LoxLiteral> for PrimitiveObject {
     fn from(literal: LoxLiteral) -> Self {
         match literal {
             LoxLiteral::Boolean(b) => PrimitiveObject::Boolean(b),
-            LoxLiteral::String(s) => PrimitiveObject::String(s),
+            LoxLiteral::String(s) => PrimitiveObject::String(
+                HashString {
+                    value: s
+                }),
             LoxLiteral::Number(n) => PrimitiveObject::Number(n),
             LoxLiteral::Nil => PrimitiveObject::Nil,
         }
@@ -368,7 +383,11 @@ impl Object {
 
     pub fn string(s: StringRef) -> ObjectRef {
         Object {
-            value: ObjectType::Primitive(PrimitiveObject::String(s)),
+            value: ObjectType::Primitive(PrimitiveObject::String(
+                HashString {
+                    value: s
+                }
+            )),
         }
         .wrap()
     }
@@ -476,14 +495,14 @@ impl ObjectType {
         match self {
             Self::Primitive(primitive) => match primitive {
                 PrimitiveObject::Boolean(b) => format!("{}", b),
-                PrimitiveObject::String(s) => s.to_string(),
+                PrimitiveObject::String(HashString { value }) => value.to_string(),
                 PrimitiveObject::Number(n) => format!("{}", n),
                 PrimitiveObject::Function(callable) => callable.borrow().to_string(),
-                PrimitiveObject::Class(class) => class.name.to_string(),
+                PrimitiveObject::Class(class) => class.name.value.to_string(),
                 PrimitiveObject::Nil => String::from("nil"),
             },
             // TODO: maybe actually print objects
-            Self::Instance(object) => format!("<{}>", object.class.name),
+            Self::Instance(object) => format!("<{}>", object.class.name.value),
             Self::Data(Data::List(list)) => format!(
                 "[{}]",
                 list.iter()
@@ -496,13 +515,13 @@ impl ObjectType {
 
     pub fn get_type(&self) -> String {
         match self {
-            Self::Primitive(primitive) => primitive.get_class().name.to_string(),
-            Self::Instance(Instance { class, .. }) => class.name.to_string(),
+            Self::Primitive(primitive) => primitive.get_class().name.value.to_string(),
+            Self::Instance(Instance { class, .. }) => class.name.value.to_string(),
             Self::Data(Data::List(_)) => "List".to_string(),
         }
     }
 
-    pub fn set(&mut self, name: String, value: ObjectRef) {
+    pub fn set(&mut self, name: HashString, value: ObjectRef) {
         match self {
             Self::Instance(Instance { fields, .. }) => {
                 fields.insert(name, value);
@@ -515,7 +534,7 @@ impl ObjectType {
         &self,
         this: ObjectRef,
         expression: &Expression,
-        name: &str,
+        name: HashString
     ) -> Result<ObjectRef, LoxError> {
         if let Self::Instance(Instance { class, fields }) = self {
             if let Some(field) = fields.get(name) {
@@ -537,7 +556,7 @@ impl ObjectType {
         Err(crate::lox::runtime_error(
             expression.clone(),
             LoxErrorType::PropertyError,
-            &format!("undefined property {}", name),
+            &format!("undefined property {}", name.value),
         ))
     }
 }

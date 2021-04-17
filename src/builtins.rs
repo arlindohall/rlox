@@ -17,12 +17,12 @@ use crate::{
 fn clock_impl(
     _args: Vec<ObjectRef>,
     _environment: SharedEnvironment,
-    expression: Expression,
+    expression: &Expression,
 ) -> Result<ObjectRef, LoxError> {
     match SystemTime::now().duration_since(UNIX_EPOCH) {
         Ok(time) => Ok(Object::number(time.as_millis() as f64)),
         Err(_err) => Err(crate::lox::runtime_error(
-            expression,
+            expression.clone(),
             LoxErrorType::SystemError,
             "error getting system time",
         )),
@@ -46,7 +46,7 @@ static mut LIST: Option<LoxClass> = None;
 pub fn list_impl(
     _args: Vec<ObjectRef>,
     _environment: SharedEnvironment,
-    _expression: Expression,
+    _expression: &Expression,
 ) -> Result<ObjectRef, LoxError> {
     Ok(Object::list())
 }
@@ -64,7 +64,7 @@ pub fn list(global: SharedEnvironment) -> ObjectRef {
 fn list_push_impl(
     args: Vec<ObjectRef>,
     environment: SharedEnvironment,
-    _expression: Expression,
+    _expression: &Expression,
 ) -> Result<ObjectRef, LoxError> {
     let value = args[0].clone();
     let this = environment.borrow().values.get("this").unwrap().clone();
@@ -75,7 +75,7 @@ fn list_push_impl(
 fn list_pop_impl(
     _args: Vec<ObjectRef>,
     environment: SharedEnvironment,
-    _expression: Expression,
+    _expression: &Expression,
 ) -> Result<ObjectRef, LoxError> {
     let this = environment.borrow().values.get("this").unwrap().clone();
     let value = this.borrow_mut().pop();
@@ -85,7 +85,7 @@ fn list_pop_impl(
 fn list_get_impl(
     args: Vec<ObjectRef>,
     environment: SharedEnvironment,
-    _expression: Expression,
+    _expression: &Expression,
 ) -> Result<ObjectRef, LoxError> {
     let value = args[0].clone();
     let this = environment.borrow().values.get("this").unwrap().clone();
@@ -208,13 +208,13 @@ fn builtin_methods() -> HashMap<String, FunctionRef> {
 fn to_string_impl(
     _args: Vec<ObjectRef>,
     environment: SharedEnvironment,
-    expression: Expression,
+    expression: &Expression,
 ) -> Result<ObjectRef, LoxError> {
     if let Some(this) = environment.borrow_mut().values.get("this") {
         Ok(Object::string(this.borrow_mut().to_string()))
     } else {
         Err(crate::lox::runtime_error(
-            expression,
+            expression.clone(),
             LoxErrorType::TypeError,
             "called 'to_string' on non-object",
         ))
@@ -236,21 +236,21 @@ String builtins
 fn to_number_impl(
     _args: Vec<ObjectRef>,
     environment: SharedEnvironment,
-    expression: Expression,
+    expression: &Expression,
 ) -> Result<ObjectRef, LoxError> {
     if let Some(this) = environment.borrow_mut().values.get("this") {
         let string = this.borrow().to_string();
         match string.parse() {
             Ok(num) => Ok(Object::number(num)),
             Err(_) => Err(crate::lox::runtime_error(
-                expression,
+                expression.clone(),
                 LoxErrorType::TypeError,
                 &format!("cannot convert {} to number", string),
             )),
         }
     } else {
         Err(crate::lox::runtime_error(
-            expression,
+            expression.clone(),
             LoxErrorType::TypeError,
             "called 'to_number' on non-string",
         ))

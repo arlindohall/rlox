@@ -1,3 +1,5 @@
+use std::{cell::RefCell, rc::Rc};
+
 use crate::lox::{FileLocation, LoxError, LoxErrorType, LoxNumber};
 use crate::scanner::{Token, TokenType};
 use uuid::Uuid;
@@ -132,7 +134,7 @@ pub enum Statement {
 pub struct FunctionDefinition {
     pub name: Token,
     pub params: Vec<Token>,
-    pub body: Vec<Statement>,
+    pub body: FunctionBodyRef,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -151,6 +153,7 @@ pub enum LoxLiteral {
 }
 
 pub type ExpressionId = u128;
+pub type FunctionBodyRef = Rc<RefCell<Vec<Statement>>>;
 
 impl Parser {
     pub fn new(tokens: Vec<Token>) -> Parser {
@@ -279,7 +282,7 @@ impl Parser {
             TokenType::LeftBrace,
             &format!("expect '{{' before {} body", kind),
         )?;
-        let body = self.block()?;
+        let body = Rc::new(RefCell::new(self.block()?));
         Ok(FunctionDefinition { name, params, body })
     }
 

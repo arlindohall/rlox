@@ -239,7 +239,7 @@ impl Lox {
 
         let mut interpreter = resolver.destruct();
         for statement in statements {
-            interpreter.interpret_statement(statement)?;
+            interpreter.interpret_statement(&statement)?;
         }
 
         Ok(())

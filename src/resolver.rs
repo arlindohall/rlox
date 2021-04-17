@@ -172,7 +172,7 @@ impl Resolver {
             self.declare(&param)?;
             self.define(&param);
         }
-        self.resolve_statements(&definition.body)?;
+        self.resolve_statements(&definition.body.borrow())?;
         self.end_scope();
         std::mem::swap(&mut enclosing_function, &mut self.current_function);
         Ok(())

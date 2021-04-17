@@ -1,7 +1,4 @@
-use std::{
-    collections::HashMap,
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::{collections::HashMap, rc::Rc, time::{SystemTime, UNIX_EPOCH}};
 
 use crate::{
     interpreter::{
@@ -31,7 +28,7 @@ fn clock_impl(
 
 pub fn clock(global: SharedEnvironment) -> ObjectRef {
     Object::function(LoxFunction::native(
-        "clock".to_string(),
+        "clock",
         0,
         global,
         clock_impl,
@@ -53,7 +50,7 @@ pub fn list_impl(
 
 pub fn list(global: SharedEnvironment) -> ObjectRef {
     Object::function(LoxFunction::native(
-        "list".to_string(),
+        "list",
         0,
         global,
         list_impl,
@@ -94,15 +91,15 @@ fn list_get_impl(
 }
 
 fn list_push() -> FunctionRef {
-    LoxFunction::native("push".to_string(), 1, Environment::new(), list_push_impl)
+    LoxFunction::native("push", 1, Environment::new(), list_push_impl)
 }
 
 fn list_pop() -> FunctionRef {
-    LoxFunction::native("pop".to_string(), 0, Environment::new(), list_pop_impl)
+    LoxFunction::native("pop", 0, Environment::new(), list_pop_impl)
 }
 
 fn list_get() -> FunctionRef {
-    LoxFunction::native("get".to_string(), 1, Environment::new(), list_get_impl)
+    LoxFunction::native("get", 1, Environment::new(), list_get_impl)
 }
 
 pub fn list_class() -> LoxClass {
@@ -112,7 +109,7 @@ pub fn list_class() -> LoxClass {
             methods.insert("push".to_string(), list_push());
             methods.insert("pop".to_string(), list_pop());
             methods.insert("get".to_string(), list_get());
-            LIST = Some(LoxClass::new("List".to_string(), methods));
+            LIST = Some(LoxClass::new("List", methods));
         }
         LIST.clone().unwrap()
     }
@@ -142,7 +139,7 @@ static mut BUILTINS: Builtins = Builtins {
 pub fn boolean() -> LoxClass {
     unsafe {
         if let None = BUILTINS.boolean {
-            BUILTINS.boolean = Some(LoxClass::new("Boolean".to_string(), builtin_methods()));
+            BUILTINS.boolean = Some(LoxClass::new("Boolean", builtin_methods()));
         }
         BUILTINS.boolean.clone().unwrap()
     }
@@ -151,7 +148,7 @@ pub fn boolean() -> LoxClass {
 pub fn number() -> LoxClass {
     unsafe {
         if let None = BUILTINS.number {
-            BUILTINS.number = Some(LoxClass::new("Number".to_string(), builtin_methods()));
+            BUILTINS.number = Some(LoxClass::new("Number", builtin_methods()));
         }
         BUILTINS.number.clone().unwrap()
     }
@@ -162,7 +159,7 @@ pub fn string() -> LoxClass {
         if let None = BUILTINS.string {
             let mut shared = builtin_methods();
             shared.insert("to_number".to_string(), to_number());
-            BUILTINS.string = Some(LoxClass::new("String".to_string(), shared));
+            BUILTINS.string = Some(LoxClass::new("String", shared));
         }
         BUILTINS.string.clone().unwrap()
     }
@@ -171,7 +168,7 @@ pub fn string() -> LoxClass {
 pub fn function() -> LoxClass {
     unsafe {
         if let None = BUILTINS.function {
-            BUILTINS.function = Some(LoxClass::new("Function".to_string(), builtin_methods()));
+            BUILTINS.function = Some(LoxClass::new("Function", builtin_methods()));
         }
         BUILTINS.function.clone().unwrap()
     }
@@ -180,7 +177,7 @@ pub fn function() -> LoxClass {
 pub fn meta_class() -> LoxClass {
     unsafe {
         if let None = BUILTINS.meta_class {
-            BUILTINS.meta_class = Some(LoxClass::new("Class".to_string(), builtin_methods()));
+            BUILTINS.meta_class = Some(LoxClass::new("Class", builtin_methods()));
         }
         BUILTINS.meta_class.clone().unwrap()
     }
@@ -189,7 +186,7 @@ pub fn meta_class() -> LoxClass {
 pub fn nil() -> LoxClass {
     unsafe {
         if let None = BUILTINS.nil {
-            BUILTINS.nil = Some(LoxClass::new("Nil".to_string(), builtin_methods()));
+            BUILTINS.nil = Some(LoxClass::new("Nil", builtin_methods()));
         }
         BUILTINS.nil.clone().unwrap()
     }
@@ -211,7 +208,7 @@ fn to_string_impl(
     expression: &Expression,
 ) -> Result<ObjectRef, LoxError> {
     if let Some(this) = environment.borrow_mut().values.get("this") {
-        Ok(Object::string(this.borrow_mut().to_string()))
+        Ok(Object::string(Rc::new(this.borrow_mut().to_string())))
     } else {
         Err(crate::lox::runtime_error(
             expression.clone(),
@@ -223,7 +220,7 @@ fn to_string_impl(
 
 fn to_string() -> FunctionRef {
     LoxFunction::native(
-        "to_string".to_string(),
+        "to_string",
         0,
         Environment::new(),
         to_string_impl,
@@ -259,7 +256,7 @@ fn to_number_impl(
 
 fn to_number() -> FunctionRef {
     LoxFunction::native(
-        "to_number".to_string(),
+        "to_number",
         0,
         Environment::new(),
         to_number_impl,

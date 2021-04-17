@@ -1,6 +1,6 @@
 use std::{cell::RefCell, rc::Rc};
 
-use crate::lox::{FileLocation, LoxError, LoxErrorType, LoxNumber};
+use crate::{lox::{FileLocation, LoxError, LoxErrorType, LoxNumber}, scanner::StringRef};
 use crate::scanner::{Token, TokenType};
 use uuid::Uuid;
 
@@ -147,7 +147,7 @@ pub struct ClassDefinition {
 #[derive(Debug, Clone, PartialEq)]
 pub enum LoxLiteral {
     Boolean(bool),
-    String(String),
+    String(StringRef),
     Number(LoxNumber),
     Nil,
 }

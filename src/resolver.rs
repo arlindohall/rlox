@@ -119,7 +119,7 @@ impl Resolver {
         };
         for scope in self.scopes.iter().rev() {
             i += 1;
-            if scope.borrow().contains_key(&name.lexeme) {
+            if scope.borrow().contains_key(&*name.lexeme) {
                 if crate::lox::TRACE {
                     println!(">>> Found at {}", i)
                 };
@@ -143,7 +143,7 @@ impl Resolver {
 
     fn declare(&mut self, name: &Token) -> Result<(), LoxError> {
         if let Some(scope) = self.peek() {
-            if scope.borrow().contains_key(&name.lexeme) {
+            if scope.borrow().contains_key(&*name.lexeme) {
                 return Err(crate::lox::parse_error(
                     name.clone(),
                     LoxErrorType::DefinitionError,
@@ -240,8 +240,8 @@ impl Resolver {
             }
             Expression::Variable { name, .. } => {
                 if let Some(scope) = self.peek() {
-                    if scope.borrow().contains_key(&name.lexeme)
-                        && !scope.borrow().get(&name.lexeme).unwrap()
+                    if scope.borrow().contains_key(&*name.lexeme)
+                        && !scope.borrow().get(&*name.lexeme).unwrap()
                     {
                         return Err(crate::lox::parse_error(
                             name.clone(),
@@ -369,7 +369,7 @@ impl Resolver {
                     .insert("this".to_string(), true);
 
                 for method in methods {
-                    let function_type = if method.name.lexeme == "init" {
+                    let function_type = if &*method.name.lexeme == "init" {
                         FunctionType::Initializer
                     } else {
                         FunctionType::Method

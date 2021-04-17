@@ -1,6 +1,6 @@
 extern crate unicode_segmentation;
 
-use std::str::FromStr;
+use std::{rc::Rc, str::FromStr};
 
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -27,7 +27,7 @@ method `repr` for debugging.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Literal {
     Boolean(bool),
-    String(String),
+    String(StringRef),
     Number(LoxNumber),
     None,
 }
@@ -42,7 +42,7 @@ impl Literal {
         }
     }
 
-    pub fn get_string(self) -> Option<String> {
+    pub fn get_string(self) -> Option<StringRef> {
         if let Literal::String(s) = self {
             Some(s)
         } else {
@@ -113,10 +113,15 @@ pub enum TokenType {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Token {
     pub token_type: TokenType,
-    pub lexeme: String,
+    pub lexeme: StringRef,
     pub literal: Literal,
     pub line: LineNumber,
 }
+
+// This is used throughout the code base. Copying values every time I need to use them
+// makes the interpreter *really* slow because it spends so much time moving things around
+// in memory rather than actually interpreting code.
+pub type StringRef = Rc<String>;
 
 impl Token {
     fn _to_string(&self) -> String {
@@ -179,7 +184,7 @@ impl Scanner {
             token_type: TokenType::Eof,
             line: self.line,
             literal: Literal::None,
-            lexeme: "".to_owned(),
+            lexeme: Rc::new("".to_owned()),
         });
 
         Ok(tokens)
@@ -395,11 +400,13 @@ impl Scanner {
             lexeme.push_str(&self.graphemes[i]);
         }
 
+        let lexeme = Rc::new(lexeme);
+
         Token {
             token_type: TokenType::LoxString,
             line: self.line,
             literal: Literal::String(lexeme.clone()),
-            lexeme: lexeme,
+            lexeme,
         }
     }
 
@@ -473,11 +480,11 @@ impl Scanner {
         }
     }
 
-    fn lexeme(&self) -> String {
+    fn lexeme(&self) -> StringRef {
         let mut lexeme = String::new();
         for i in self.start..self.next {
             lexeme.push_str(&self.graphemes[i]);
         }
-        lexeme
+        Rc::new(lexeme)
     }
 }

@@ -1,3 +1,5 @@
+use std::rc::Rc;
+
 use crate::{
     builtins::clock,
     interpreter::ObjectRef,
@@ -216,11 +218,11 @@ impl Lox {
         let clock = clock(self.environment.clone());
         self.environment
             .borrow_mut()
-            .define("clock".to_owned(), clock);
+            .define(Rc::new(String::from("clock")), clock);
         let list = list(self.environment.clone());
         self.environment
             .borrow_mut()
-            .define("list".to_owned(), list);
+            .define(Rc::new(String::from("list")), list);
 
         let interpreter = Interpreter::with_env(self.environment.clone());
         let mut resolver = Resolver::new(interpreter);

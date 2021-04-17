@@ -1,6 +1,6 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
-use crate::{builtins, lox::{LoxError, LoxErrorType, LoxNumber}, parser::{ClassDefinition, Expression, ExpressionId, FunctionBodyRef, FunctionDefinition, LoxLiteral, Statement}, scanner::{Token, TokenType}};
+use crate::{builtins, lox::{LoxError, LoxErrorType, LoxNumber}, parser::{ClassDefinition, Expression, ExpressionId, FunctionBodyRef, FunctionDefinition, LoxLiteral, Statement}, scanner::{StringRef, Token, TokenType}};
 
 /*******************************************************************************
 ********************************************************************************
@@ -53,7 +53,7 @@ pub struct Object {
 // Maybe revisit this, but it's only public so builtins can implement it
 #[derive(Debug, Clone, PartialEq)]
 pub struct LoxClass {
-    name: String,
+    name: StringRef,
     methods: HashMap<String, FunctionRef>,
     superclass: Option<ObjectRef>,
 }
@@ -80,7 +80,7 @@ struct Instance {
 enum PrimitiveObject {
     Boolean(bool),
     Number(LoxNumber),
-    String(String),
+    String(StringRef),
     Function(FunctionRef),
     Class(ClassRef),
     Nil,
@@ -92,13 +92,13 @@ pub struct LoxFunction {
     closure: SharedEnvironment,
     exec: Executable,
     is_initializer: bool,
-    name: String,
+    name: StringRef,
 }
 
 #[derive(Clone)]
 enum Executable {
     Constructor(ClassRef),
-    Interpreted(FunctionBodyRef, Vec<String>),
+    Interpreted(FunctionBodyRef, Vec<StringRef>),
     Native(fn(Vec<ObjectRef>, SharedEnvironment, &Expression) -> Result<ObjectRef, LoxError>),
 }
 
@@ -226,7 +226,7 @@ impl AstPrinter for Statement {
                 definition
                     .params
                     .iter()
-                    .map(|p| p.lexeme.to_owned())
+                    .map(|p| p.lexeme.to_string())
                     .collect::<Vec<String>>()
                     .join(", "),
                 definition
@@ -280,10 +280,10 @@ impl LoxClass {
         self.methods.get(name).map(|m| m.clone()).or(super_method)
     }
 
-    pub fn new(name: String, methods: HashMap<String, FunctionRef>) -> LoxClass {
+    pub fn new(name: &str, methods: HashMap<String, FunctionRef>) -> LoxClass {
         LoxClass {
-            name,
             methods,
+            name: Rc::new(String::from(name)),
             superclass: None,
         }
     }
@@ -366,7 +366,7 @@ impl Object {
         .wrap()
     }
 
-    pub fn string(s: String) -> ObjectRef {
+    pub fn string(s: StringRef) -> ObjectRef {
         Object {
             value: ObjectType::Primitive(PrimitiveObject::String(s)),
         }
@@ -476,10 +476,10 @@ impl ObjectType {
         match self {
             Self::Primitive(primitive) => match primitive {
                 PrimitiveObject::Boolean(b) => format!("{}", b),
-                PrimitiveObject::String(s) => s.clone(),
+                PrimitiveObject::String(s) => s.to_string(),
                 PrimitiveObject::Number(n) => format!("{}", n),
                 PrimitiveObject::Function(callable) => callable.borrow().to_string(),
-                PrimitiveObject::Class(class) => class.name.clone(),
+                PrimitiveObject::Class(class) => class.name.to_string(),
                 PrimitiveObject::Nil => String::from("nil"),
             },
             // TODO: maybe actually print objects
@@ -496,7 +496,7 @@ impl ObjectType {
 
     pub fn get_type(&self) -> String {
         match self {
-            Self::Primitive(primitive) => primitive.get_class().name,
+            Self::Primitive(primitive) => primitive.get_class().name.to_string(),
             Self::Instance(Instance { class, .. }) => class.name.to_string(),
             Self::Data(Data::List(_)) => "List".to_string(),
         }
@@ -574,7 +574,7 @@ impl Interpreter {
                 .globals
                 .borrow()
                 .values
-                .get(&name.lexeme)
+                .get(&*name.lexeme)
                 .unwrap()
                 .clone()),
         }
@@ -725,7 +725,7 @@ impl Interpreter {
                         (
                             ObjectType::Primitive(PrimitiveObject::String(l)),
                             ObjectType::Primitive(PrimitiveObject::String(r)),
-                        ) => Ok(Object::string(l.clone() + &r)),
+                        ) => Ok(Object::string(Rc::new(l.to_string() + &r))),
                         _ => Err(crate::lox::runtime_error(
                             expression.clone(),
                             LoxErrorType::TypeError,
@@ -845,7 +845,7 @@ impl Interpreter {
                     object
                         .borrow_mut()
                         .value
-                        .set(name.lexeme.clone(), value.clone());
+                        .set(name.lexeme.to_string(), value.clone());
                     // TODO, and this will probably be far-reaching, object fields need to be Rc references.
                     // this will appear as a bug where object state changes aren't persisted
                     Ok(value)
@@ -973,7 +973,7 @@ impl Interpreter {
                 let params = definition
                     .params
                     .iter()
-                    .map(|param| param.lexeme.to_owned())
+                    .map(|param| param.lexeme.clone())
                     .collect();
                 let func = Object::function(LoxFunction::interpreted(
                     definition.name.lexeme.clone(),
@@ -1007,7 +1007,7 @@ impl Interpreter {
                     self.environment = Environment::extend(enclosing);
                     self.environment
                         .borrow_mut()
-                        .define("super".to_string(), sc.clone());
+                        .define(Rc::new("super".to_string()), sc.clone());
                     Some(sc)
                 } else {
                     None
@@ -1018,7 +1018,7 @@ impl Interpreter {
                     .map(|FunctionDefinition { name, params, body }| {
                         let params = params.iter().map(|token| token.lexeme.clone()).collect();
                         (
-                            name.lexeme.clone(),
+                            name.lexeme.to_string(),
                             LoxFunction::interpreted(
                                 name.lexeme.clone(),
                                 params,
@@ -1100,7 +1100,7 @@ impl Environment {
         }))
     }
 
-    pub fn define(&mut self, name: String, value: ObjectRef) {
+    pub fn define(&mut self, name: StringRef, value: ObjectRef) {
         if crate::lox::TRACE {
             println!(
                 ">>> Inserted into environment name={} val={}",
@@ -1108,7 +1108,7 @@ impl Environment {
                 value.borrow().value.to_string()
             )
         };
-        self.values.insert(name, value);
+        self.values.insert(name.to_string(), value);
         if crate::lox::TRACE {
             println!(">>> Raw environment contents map={:?}", self.values)
         };
@@ -1159,24 +1159,24 @@ impl LoxFunction {
     }
 
     pub fn native(
-        name: String,
+        name: &str,
         arity: u8,
         global: SharedEnvironment,
         f: fn(Vec<ObjectRef>, SharedEnvironment, &Expression) -> Result<ObjectRef, LoxError>,
     ) -> FunctionRef {
         LoxFunction {
             arity,
-            name,
             closure: global,
             is_initializer: false,
             exec: Executable::Native(f),
+            name: Rc::new(String::from(name)),
         }
         .wrap()
     }
 
     pub fn interpreted(
-        name: String,
-        params: Vec<String>,
+        name: StringRef,
+        params: Vec<StringRef>,
         body: FunctionBodyRef,
         closure: SharedEnvironment,
     ) -> FunctionRef {
@@ -1225,7 +1225,7 @@ impl LoxFunction {
 
     fn bind(&mut self, obj: ObjectRef) -> FunctionRef {
         let env = Environment::extend(self.closure.clone());
-        env.borrow_mut().define("this".to_string(), obj);
+        env.borrow_mut().define(Rc::new("this".to_string()), obj);
         LoxFunction {
             closure: env,
             is_initializer: self.is_initializer,

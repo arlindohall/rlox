@@ -32,6 +32,7 @@ pub struct Interpreter {
 }
 
 type Locals = HashMap<ExpressionId, u16>;
+pub type VarId = u32;
 pub type SharedEnvironment = Rc<RefCell<Environment>>;
 pub type ObjectRef = Rc<RefCell<Object>>;
 pub type ClassRef = Rc<LoxClass>;
@@ -40,7 +41,7 @@ pub type FunctionRef = Rc<RefCell<LoxFunction>>;
 // TODO maybe don't have values exposed, just have a getter, no setter??
 #[derive(Debug, Clone, PartialEq)]
 pub struct Environment {
-    pub values: HashMap<String, ObjectRef>,
+    pub values: HashMap<VarId, ObjectRef>,
     enclosing: Option<SharedEnvironment>,
 }
 
@@ -54,7 +55,7 @@ pub struct Object {
 #[derive(Debug, Clone, PartialEq)]
 pub struct LoxClass {
     name: String,
-    methods: HashMap<String, FunctionRef>,
+    methods: HashMap<VarId, FunctionRef>,
     superclass: Option<ObjectRef>,
 }
 
@@ -73,7 +74,7 @@ enum Data {
 #[derive(Debug, Clone, PartialEq)]
 struct Instance {
     class: ClassRef,
-    fields: HashMap<String, ObjectRef>,
+    fields: HashMap<VarId, ObjectRef>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -116,6 +117,29 @@ pub trait Bindable {
 
 fn take_parent(env: &SharedEnvironment) -> SharedEnvironment {
     env.borrow().enclosing.clone().unwrap()
+}
+
+pub trait Hashable {
+    fn hash(&self) -> VarId;
+}
+
+impl Hashable for String {
+    fn hash(&self) -> VarId {
+        let mut hash = 0u32;
+        for ch in self.as_bytes() {
+            hash = hash * 31 + (*ch as u32);
+        }
+        hash
+    }
+}
+impl Hashable for &str {
+    fn hash(&self) -> VarId {
+    let mut hash = 0u32;
+        for ch in self.as_bytes() {
+            hash = hash * 31 + (*ch as u32);
+        }
+        hash
+    }
 }
 
 impl AstPrinter for Expression {
@@ -277,10 +301,10 @@ impl LoxClass {
             })
             .flatten()
             .flatten();
-        self.methods.get(name).map(|m| m.clone()).or(super_method)
+        self.methods.get(&name.hash()).map(|m| m.clone()).or(super_method)
     }
 
-    pub fn new(name: String, methods: HashMap<String, FunctionRef>) -> LoxClass {
+    pub fn new(name: String, methods: HashMap<VarId, FunctionRef>) -> LoxClass {
         LoxClass {
             name,
             methods,
@@ -502,7 +526,7 @@ impl ObjectType {
         }
     }
 
-    pub fn set(&mut self, name: String, value: ObjectRef) {
+    pub fn set(&mut self, name: VarId, value: ObjectRef) {
         match self {
             Self::Instance(Instance { fields, .. }) => {
                 fields.insert(name, value);
@@ -518,7 +542,7 @@ impl ObjectType {
         name: &str,
     ) -> Result<ObjectRef, LoxError> {
         if let Self::Instance(Instance { class, fields }) = self {
-            if let Some(field) = fields.get(name) {
+            if let Some(field) = fields.get(&name.hash()) {
                 return Ok(field.clone());
             } else if let Some(method) = class.find_method(name) {
                 return Ok(Object::function(method.clone().borrow_mut().bind(this)));
@@ -574,7 +598,7 @@ impl Interpreter {
                 .globals
                 .borrow()
                 .values
-                .get(&name.lexeme)
+                .get(&name.lexeme.hash())
                 .unwrap()
                 .clone()),
         }
@@ -591,7 +615,7 @@ impl Interpreter {
             .ancestor(distance)
             .borrow()
             .values
-            .get(name)
+            .get(&name.hash())
             .unwrap()
             .clone();
         Ok(value)
@@ -845,7 +869,7 @@ impl Interpreter {
                     object
                         .borrow_mut()
                         .value
-                        .set(name.lexeme.clone(), value.clone());
+                        .set(name.lexeme.hash(), value.clone());
                     // TODO, and this will probably be far-reaching, object fields need to be Rc references.
                     // this will appear as a bug where object state changes aren't persisted
                     Ok(value)
@@ -1013,12 +1037,12 @@ impl Interpreter {
                     None
                 };
 
-                let methods: HashMap<String, FunctionRef> = methods
+                let methods: HashMap<VarId, FunctionRef> = methods
                     .iter()
                     .map(|FunctionDefinition { name, params, body }| {
                         let params = params.iter().map(|token| token.lexeme.clone()).collect();
                         (
-                            name.lexeme.clone(),
+                            name.lexeme.hash(),
                             LoxFunction::interpreted(
                                 name.lexeme.clone(),
                                 params,
@@ -1108,7 +1132,7 @@ impl Environment {
                 value.borrow().value.to_string()
             )
         };
-        self.values.insert(name, value);
+        self.values.insert(name.hash(), value);
         if crate::lox::TRACE {
             println!(">>> Raw environment contents map={:?}", self.values)
         };
@@ -1200,7 +1224,7 @@ impl LoxFunction {
         };
         match &object.borrow().value {
             ObjectType::Primitive(PrimitiveObject::Function(f)) => Ok(f.clone()),
-            ObjectType::Instance(Instance { fields, .. }) => match fields.get("__call") {
+            ObjectType::Instance(Instance { fields, .. }) => match fields.get(&"__call".hash()) {
                 Some(obj) => Self::try_from(obj.clone(), expression),
                 None => err(expression),
             },
@@ -1237,7 +1261,7 @@ impl LoxFunction {
     }
 
     fn this(&self) -> ObjectRef {
-        self.closure.borrow().values.get("this").unwrap().clone()
+        self.closure.borrow().values.get(&"this".hash()).unwrap().clone()
     }
 
     fn call(

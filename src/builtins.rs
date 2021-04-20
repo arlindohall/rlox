@@ -3,13 +3,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use crate::{
-    interpreter::{
-        Environment, FunctionRef, LoxClass, LoxFunction, Object, ObjectRef, SharedEnvironment,
-    },
-    lox::{LoxError, LoxErrorType},
-    parser::Expression,
-};
+use crate::{interpreter::{Environment, FunctionRef, Hashable, LoxClass, LoxFunction, Object, ObjectRef, SharedEnvironment, VarId}, lox::{LoxError, LoxErrorType}, parser::Expression};
 
 /*
  * Built-in clock function. We deviate from lox and show milliseconds.
@@ -67,7 +61,7 @@ fn list_push_impl(
     _expression: &Expression,
 ) -> Result<ObjectRef, LoxError> {
     let value = args[0].clone();
-    let this = environment.borrow().values.get("this").unwrap().clone();
+    let this = environment.borrow().values.get(&"this".hash()).unwrap().clone();
     this.borrow_mut().push(value);
     Ok(this.clone())
 }
@@ -77,7 +71,7 @@ fn list_pop_impl(
     environment: SharedEnvironment,
     _expression: &Expression,
 ) -> Result<ObjectRef, LoxError> {
-    let this = environment.borrow().values.get("this").unwrap().clone();
+    let this = environment.borrow().values.get(&"this".hash()).unwrap().clone();
     let value = this.borrow_mut().pop();
     Ok(value.or(Some(Object::nil())).unwrap())
 }
@@ -88,7 +82,7 @@ fn list_get_impl(
     _expression: &Expression,
 ) -> Result<ObjectRef, LoxError> {
     let value = args[0].clone();
-    let this = environment.borrow().values.get("this").unwrap().clone();
+    let this = environment.borrow().values.get(&"this".hash()).unwrap().clone();
     let result = this.borrow().get(value);
     Ok(result.or(Some(Object::nil())).unwrap())
 }
@@ -109,9 +103,9 @@ pub fn list_class() -> LoxClass {
     unsafe {
         if let None = LIST {
             let mut methods = builtin_methods();
-            methods.insert("push".to_string(), list_push());
-            methods.insert("pop".to_string(), list_pop());
-            methods.insert("get".to_string(), list_get());
+            methods.insert("push".hash(), list_push());
+            methods.insert("pop".hash(), list_pop());
+            methods.insert("get".hash(), list_get());
             LIST = Some(LoxClass::new("List".to_string(), methods));
         }
         LIST.clone().unwrap()
@@ -161,7 +155,7 @@ pub fn string() -> LoxClass {
     unsafe {
         if let None = BUILTINS.string {
             let mut shared = builtin_methods();
-            shared.insert("to_number".to_string(), to_number());
+            shared.insert("to_number".hash(), to_number());
             BUILTINS.string = Some(LoxClass::new("String".to_string(), shared));
         }
         BUILTINS.string.clone().unwrap()
@@ -198,9 +192,9 @@ pub fn nil() -> LoxClass {
 /*
 Shared built-in methods.
  */
-fn builtin_methods() -> HashMap<String, FunctionRef> {
+fn builtin_methods() -> HashMap<VarId, FunctionRef> {
     let mut methods = HashMap::new();
-    methods.insert("to_string".to_string(), to_string());
+    methods.insert("to_string".hash(), to_string());
 
     methods
 }
@@ -210,7 +204,7 @@ fn to_string_impl(
     environment: SharedEnvironment,
     expression: &Expression,
 ) -> Result<ObjectRef, LoxError> {
-    if let Some(this) = environment.borrow_mut().values.get("this") {
+    if let Some(this) = environment.borrow_mut().values.get(&"this".hash()) {
         Ok(Object::string(this.borrow_mut().to_string()))
     } else {
         Err(crate::lox::runtime_error(
@@ -238,7 +232,7 @@ fn to_number_impl(
     environment: SharedEnvironment,
     expression: &Expression,
 ) -> Result<ObjectRef, LoxError> {
-    if let Some(this) = environment.borrow_mut().values.get("this") {
+    if let Some(this) = environment.borrow_mut().values.get(&"this".hash()) {
         let string = this.borrow().to_string();
         match string.parse() {
             Ok(num) => Ok(Object::number(num)),
